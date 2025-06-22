@@ -1,64 +1,69 @@
-import os
 import json
 import zipfile
+import logging
 import pandas as pd
+from pathlib import Path
 
-INPUT_DIR = "data/raw_downloads"
-OUTPUT_BASE_DIR = "data/parquet"
+logging.basicConfig(level=logging.INFO, format="%(message)s")
 
-def processar_json_para_dataframe(nome_arquivo, json_data):
-    registros = []
+RAW_DIR     = Path(__file__).resolve().parent.parent / "data" / "raw_downloads"
+PARQUET_DIR = Path(__file__).resolve().parent.parent / "data" / "parquet"
 
-    if "applicants" in nome_arquivo:
-        for codigo, dados in json_data.items():
-            registro = {"codigo_profissional": codigo}
-            registro.update(dados.get("infos_basicas", {}))
-            registro.update(dados.get("informacoes_pessoais", {}))
-            registro.update(dados.get("informacoes_profissionais", {}))
-            registros.append(registro)
-        return pd.DataFrame(registros)
+def extrair_applicants(z: zipfile.ZipFile, name: str) -> pd.DataFrame:
+    data = json.loads(z.read(name))
+    records = list(data.values())
+    df = pd.json_normalize(records)
+    # renomeia a coluna aninhada para unificar o join
+    if "infos_basicas.codigo_profissional" in df.columns:
+        df = df.rename(
+            columns={"infos_basicas.codigo_profissional": "codigo_profissional"}
+        )
+    return df
 
-    elif "prospects" in nome_arquivo:
-        for vaga_id, dados in json_data.items():
-            for prospect in dados.get("prospects", []):
-                prospect["vaga_id"] = vaga_id
-                registros.append(prospect)
-        return pd.DataFrame(registros)
+def extrair_prospects(z: zipfile.ZipFile, name: str) -> pd.DataFrame:
+    data = json.loads(z.read(name))
+    records = []
+    for vaga_id, bloco in data.items():
+        for cand in bloco.get("prospects", []):
+            cand["vaga_id"]    = int(vaga_id)
+            records.append(cand)
+    return pd.DataFrame(records)
 
-    elif "vagas" in nome_arquivo:
-        for vaga_id, dados in json_data.items():
-            registro = {"vaga_id": vaga_id}
-            registro.update(dados.get("informacoes_basicas", {}))
-            registro.update(dados.get("perfil_vaga", {}))
-            registro.update(dados.get("beneficios", {}))
-            registros.append(registro)
-        return pd.DataFrame(registros)
+def extrair_vagas(z: zipfile.ZipFile, name: str) -> pd.DataFrame:
+    data = json.loads(z.read(name))
+    records = []
+    for vaga_id, bloco in data.items():
+        flat = {"vaga_id": int(vaga_id)}
+        flat.update(bloco.get("informacoes_basicas", {}))
+        flat.update(bloco.get("perfil_vaga", {}))
+        flat.update(bloco.get("beneficios", {}))
+        records.append(flat)
+    return pd.DataFrame(records)
 
-    return pd.DataFrame()  # fallback vazio
+def extrair_e_converter():
+    for zip_path in RAW_DIR.glob("*.zip"):
+        logging.info(f"Processando: {zip_path.name}")
+        with zipfile.ZipFile(zip_path, "r") as z:
+            stem = zip_path.stem  # 'applicants', 'prospects' ou 'vagas'
+            for name in z.namelist():
+                if not name.lower().endswith(".json"):
+                    continue
 
-def extrair_json_dos_zips():
-    for arquivo in os.listdir(INPUT_DIR):
-        if arquivo.endswith(".zip"):
-            zip_path = os.path.join(INPUT_DIR, arquivo)
-            print(f"🧾 Processando: {zip_path}")
-            with zipfile.ZipFile(zip_path, "r") as z:
-                for nome_json in z.namelist():
-                    if nome_json.endswith(".json"):
-                        print(f"📂 Extraindo JSON: {nome_json}")
-                        with z.open(nome_json) as f:
-                            try:
-                                data = json.load(f)
-                                df = processar_json_para_dataframe(nome_json, data)
-                                if not df.empty:
-                                    output_dir = os.path.join(OUTPUT_BASE_DIR, nome_json.split(".")[0])
-                                    os.makedirs(output_dir, exist_ok=True)
-                                    output_path = os.path.join(output_dir, f"{nome_json.split('.')[0]}.parquet")
-                                    df.to_parquet(output_path, index=False)
-                                    print(f"✅ Parquet salvo em: {output_path}")
-                                else:
-                                    print(f"⚠️ Nenhum dado processado em: {nome_json}")
-                            except Exception as e:
-                                print(f"❌ Erro ao processar {nome_json}: {e}")
+                if stem == "applicants":
+                    df = extrair_applicants(z, name)
+                elif stem == "prospects":
+                    df = extrair_prospects(z, name)
+                elif stem == "vagas":
+                    df = extrair_vagas(z, name)
+                else:
+                    logging.warning(f"Zip desconhecido: {stem}, pulando.")
+                    continue
+
+                out_dir = PARQUET_DIR / stem
+                out_dir.mkdir(parents=True, exist_ok=True)
+                out_file = out_dir / f"{stem}.parquet"
+                df.to_parquet(out_file, index=False)
+                logging.info(f"Salvo em: {out_file}")
 
 if __name__ == "__main__":
-    extrair_json_dos_zips()
+    extrair_e_converter()

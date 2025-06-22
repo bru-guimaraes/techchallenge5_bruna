@@ -1,15 +1,18 @@
 from pathlib import Path
 
-# Diretório raiz do projeto
-ROOT_DIR = Path(__file__).resolve().parents[1]
+# Diretório raiz do projeto (dois níveis acima deste arquivo)
+ROOT_DIR = Path(__file__).resolve().parent.parent
 
-# Caminhos dos arquivos Parquet
-PATH_PARQUET_APPLICANTS = ROOT_DIR / "data" / "parquet" / "applicants" / "applicants.parquet"
-PATH_PARQUET_PROSPECTS = ROOT_DIR / "data" / "parquet" / "prospects" / "prospects.parquet"
-PATH_PARQUET_VAGAS = ROOT_DIR / "data" / "parquet" / "vagas" / "vagas.parquet"
+# Diretórios de dados e modelos
+DATA_DIR = ROOT_DIR / "data" / "parquet"
+MODEL_DIR = ROOT_DIR / "model"
+MODEL_DIR.mkdir(parents=True, exist_ok=True)
 
-# Caminho para salvar o modelo treinado
-PATH_MODELO_SAIDA = ROOT_DIR / "model" / "modelo_classificador.pkl"
+# Caminhos dos Parquet
+PATH_PARQUET_APPLICANTS = DATA_DIR / "applicants" / "applicants.parquet"
+PATH_PARQUET_PROSPECTS = DATA_DIR / "prospects" / "prospects.parquet"
+PATH_PARQUET_VAGAS     = DATA_DIR / "vagas" / "vagas.parquet"
 
-# Caminho para salvar o LabelEncoder
-PATH_ENCODER_SAIDA = ROOT_DIR / "model" / "label_encoder_contratado.pkl"
+# Caminhos de saída do modelo e (opcional) encoder de rótulos
+PATH_MODEL = MODEL_DIR / "modelo_classificador.pkl"
+PATH_LE    = MODEL_DIR / "label_encoder_contratado.pkl"
