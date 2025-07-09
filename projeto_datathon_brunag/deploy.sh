@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Carrega variáveis do .env (se existir)
+# 1) Carrega .env (se existir)
 if [[ -f .env ]]; then
   export $(grep -v '^#' .env | xargs)
 fi
 
-# Validações
+# 2) Valida variáveis
 : "${IMAGE_NAME:?Defina IMAGE_NAME em .env}"
 : "${REGISTRY_TYPE:?Defina REGISTRY_TYPE em .env (dockerhub ou ecr)}"
-if [[ "$REGISTRY_TYPE" == "ecr" ]]; then
+if [[ "${REGISTRY_TYPE}" == "ecr" ]]; then
   : "${AWS_REGION:?Defina AWS_REGION em .env para ECR}"
 fi
 : "${EC2_USER:?Defina EC2_USER em .env}"
@@ -19,64 +19,57 @@ fi
 : "${REMOTE_PORT:?Defina REMOTE_PORT em .env}"
 : "${CONTAINER_PORT:?Defina CONTAINER_PORT em .env}"
 
-LOCAL_PROJECT_DIR="."
+# 3) Build & Push local
+echo "🚀 Building Docker image..."
+docker build -t "${IMAGE_NAME}" .
 
-echo "🚀 1) Construindo imagem Docker..."
-docker build -t "${IMAGE_NAME}" "${LOCAL_PROJECT_DIR}"
-
-echo "🔑 2) Fazendo push para ${REGISTRY_TYPE^^}..."
+echo "🔑 Pushing to ${REGISTRY_TYPE^^}..."
 if [[ "${REGISTRY_TYPE}" == "dockerhub" ]]; then
   docker push "${IMAGE_NAME}"
 else
-  echo "→ Login no ECR (${AWS_REGION})"
   aws ecr get-login-password --region "${AWS_REGION}" \
     | docker login --username AWS --password-stdin "${IMAGE_NAME%%/*}"
   docker push "${IMAGE_NAME}"
 fi
 
-echo "🔗 3) Conectando no EC2 (${EC2_HOST}) para deploy..."
+# 4) Deploy remoto
+echo "🔗 Deploying to EC2 (${EC2_HOST})..."
 ssh -i "${EC2_KEY_PATH}" -o StrictHostKeyChecking=no "${EC2_USER}@${EC2_HOST}" \
-  "export REGISTRY_TYPE=${REGISTRY_TYPE} AWS_REGION=${AWS_REGION} CONTAINER_NAME=${CONTAINER_NAME} REMOTE_PORT=${REMOTE_PORT} CONTAINER_PORT=${CONTAINER_PORT} IMAGE_NAME=${IMAGE_NAME} && bash -s" <<'EOF'
+  "export IMAGE_NAME=${IMAGE_NAME} REGISTRY_TYPE=${REGISTRY_TYPE} AWS_REGION=${AWS_REGION} \
+   CONTAINER_NAME=${CONTAINER_NAME} REMOTE_PORT=${REMOTE_PORT} CONTAINER_PORT=${CONTAINER_PORT}; bash -s" <<'EOF'
   set -euo pipefail
 
-  # Instala AWS CLI se não existir
+  # a) AWS CLI v2
   if ! command -v aws &>/dev/null; then
-    echo "🐍 Instalando AWS CLI..."
-    sudo yum install -y aws-cli
+    echo "🐍 Installing AWS CLI v2..."
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "/tmp/awscliv2.zip"
+    unzip -q /tmp/awscliv2.zip -d /tmp
+    sudo /tmp/aws/install
   fi
 
-  # Inicia o Docker
+  # b) Docker
   sudo service docker start
 
-  # Faz login no ECR remotamente, se for o caso
+  # c) Login ECR remoto
   if [[ "${REGISTRY_TYPE}" == "ecr" ]]; then
-    echo "→ Login remoto no ECR"
+    echo "→ Logging into ECR..."
     aws ecr get-login-password --region "${AWS_REGION}" \
       | sudo docker login --username AWS --password-stdin "${IMAGE_NAME%%/*}"
   fi
 
-  # Puxa a nova imagem
-  echo "⬇️ Pull da imagem ${IMAGE_NAME}..."
+  # d) Pull & run
+  echo "⬇️ Pulling image ${IMAGE_NAME}..."
   sudo docker pull "${IMAGE_NAME}"
 
-  # Para e remove container antigo, se existir
   if sudo docker ps -q -f name="${CONTAINER_NAME}" | grep -q .; then
-    echo "🛑 Parando container existente..."
     sudo docker stop "${CONTAINER_NAME}"
   fi
   if sudo docker ps -aq -f name="${CONTAINER_NAME}" | grep -q .; then
-    echo "🗑️ Removendo container anterior..."
     sudo docker rm "${CONTAINER_NAME}"
   fi
 
-  # Inicia novo container
-  echo "⚡ Iniciando novo container..."
-  sudo docker run -d \
-    --name "${CONTAINER_NAME}" \
-    -p ${REMOTE_PORT}:${CONTAINER_PORT} \
-    "${IMAGE_NAME}"
-
-  echo "🎉 Deploy concluído no EC2!"
+  echo "⚡ Starting container..."
+  sudo docker run -d --name "${CONTAINER_NAME}" -p "${REMOTE_PORT}:${CONTAINER_PORT}" "${IMAGE_NAME}"
 EOF
 
-echo "✅ Tudo pronto — API disponível em http://${EC2_HOST}:${REMOTE_PORT}/"
+echo "✅ Deployment complete — http://${EC2_HOST}:${REMOTE_PORT}/"
