@@ -1,21 +1,21 @@
-# 1. Base image
 FROM python:3.10-slim
 
-# 2. Diretório de trabalho
+# 1) Define o diretório de trabalho
 WORKDIR /app
 
-# 3. Copia dependências
+# 2) Copia e instala dependências
 COPY requirements.txt .
-
-# 4. Instala dependências
 RUN pip install --upgrade pip && \
     pip install -r requirements.txt
 
-# 5. Copia todo o código
+# 3) Copia todo o código
 COPY . .
 
-# 6. Exponha a porta da API
+# 4) Gera o modelo e o features.json durante o build
+RUN python run_train.py
+
+# 5) Expõe a porta da API
 EXPOSE 8000
 
-# 7. Comando padrão: inicia o Uvicorn
+# 6) Comando padrão para iniciar
 CMD ["uvicorn", "application:app", "--host", "0.0.0.0", "--port", "8000"]

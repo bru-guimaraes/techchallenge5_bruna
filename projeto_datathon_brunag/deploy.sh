@@ -35,7 +35,8 @@ else
 fi
 
 echo "🔗 3) Conectando no EC2 (${EC2_HOST}) para deploy..."
-ssh -i "${EC2_KEY_PATH}" -o StrictHostKeyChecking=no "${EC2_USER}@${EC2_HOST}" bash -s <<'EOF'
+ssh -i "${EC2_KEY_PATH}" -o StrictHostKeyChecking=no "${EC2_USER}@${EC2_HOST}" \
+  "export REGISTRY_TYPE=${REGISTRY_TYPE} AWS_REGION=${AWS_REGION} CONTAINER_NAME=${CONTAINER_NAME} REMOTE_PORT=${REMOTE_PORT} CONTAINER_PORT=${CONTAINER_PORT} IMAGE_NAME=${IMAGE_NAME} && bash -s" <<'EOF'
   set -euo pipefail
 
   # Instala AWS CLI se não existir
