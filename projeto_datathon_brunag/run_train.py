@@ -1,6 +1,7 @@
 import pandas as pd
 import joblib
 import os
+import json
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
@@ -59,6 +60,15 @@ def main():
     X = pd.get_dummies(df[features]).astype(float)
     y = df['contratado']
 
+    # ——— AQUI ADICIONAMOS O SALVAMENTO DAS FEATURES PARA A API ———
+    feature_names = X.columns.tolist()
+    features_path = os.path.join(os.path.dirname(PATH_MODEL), "features.json")
+    os.makedirs(os.path.dirname(features_path), exist_ok=True)
+    with open(features_path, "w") as f:
+        json.dump(feature_names, f)
+    print(f"✅ Feature names saved to {features_path}")
+    # ————————————————————————————————————————————————————————————
+
     # 8) Divide treino/teste
     print("Splitting train/test sets...")
     X_train, X_test, y_train, y_test = train_test_split(
@@ -88,7 +98,7 @@ def main():
     # 13) Salva o modelo treinado
     os.makedirs(os.path.dirname(PATH_MODEL), exist_ok=True)
     joblib.dump(model, PATH_MODEL)
-    print(f"Model saved to {PATH_MODEL}")
+    print(f"✅ Model saved to {PATH_MODEL}")
 
 if __name__ == "__main__":
     main()
