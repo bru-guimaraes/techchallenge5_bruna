@@ -44,16 +44,14 @@ def main():
     print("Generating target 'contratado'...")
     df['contratado'] = (df['situacao_candidado'] == 'Contratado pela Decision').astype(int)
 
-    # 5) Define features
+    # 5) Define features e filtra NAs
     features = ['area_atuacao', 'nivel_ingles', 'nivel_espanhol', 'nivel_academico']
     df = df.dropna(subset=features + ['contratado'])
 
-    # 6) Preprocessing
-    print("Preparing X/y...")
+    # 6) One-hot e save features.json
+    print("Preparing X/y and saving features.json...")
     X = pd.get_dummies(df[features]).astype(float)
     y = df['contratado']
-
-    # — Salva lista de features —
     feature_names = X.columns.tolist()
     features_path = os.path.join(os.path.dirname(PATH_MODEL), "features.json")
     os.makedirs(os.path.dirname(features_path), exist_ok=True)
@@ -62,8 +60,9 @@ def main():
     print(f"✅ Features saved to {features_path}")
 
     # 7) Train/test split
-    print("Splitting train/test...")
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.3, random_state=42)
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.3, random_state=42
+    )
 
     # 8) SMOTE
     print("Applying SMOTE...")

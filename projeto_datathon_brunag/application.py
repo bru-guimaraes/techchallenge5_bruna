@@ -10,7 +10,7 @@ from utils.paths import PATH_MODEL
 
 app = FastAPI()
 
-# Carrega modelo e features
+# Carrega modelo e lista de features
 try:
     modelo = joblib.load(PATH_MODEL)
     features_path = os.path.join(os.path.dirname(PATH_MODEL), "features.json")
