@@ -1,10 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-#
-# deploy.sh — automação completa de build, push e deploy em EC2
-#
-
 # Carrega variáveis do .env (se existir)
 if [[ -f .env ]]; then
   export $(grep -v '^#' .env | xargs)
@@ -39,43 +35,42 @@ else
 fi
 
 echo "🔗 3) Conectando no EC2 (${EC2_HOST}) para deploy..."
-ssh -i "${EC2_KEY_PATH}" -o StrictHostKeyChecking=no "${EC2_USER}@${EC2_HOST}" bash -s <<EOF
+ssh -i "${EC2_KEY_PATH}" -o StrictHostKeyChecking=no "${EC2_USER}@${EC2_HOST}" bash -s <<'EOF'
   set -euo pipefail
 
-  # 3.1) Instala Docker se não existir
-  if ! command -v docker &>/dev/null; then
-    echo "🐳 Instalando Docker..."
-    sudo yum update -y
-    sudo amazon-linux-extras install docker -y
+  # Instala AWS CLI se não existir
+  if ! command -v aws &>/dev/null; then
+    echo "🐍 Instalando AWS CLI..."
+    sudo yum install -y aws-cli
   fi
 
-  # 3.2) Inicia Docker
+  # Inicia o Docker
   sudo service docker start
 
-  # 3.3) Se ECR, faz login remoto
+  # Faz login no ECR remotamente, se for o caso
   if [[ "${REGISTRY_TYPE}" == "ecr" ]]; then
     echo "→ Login remoto no ECR"
     aws ecr get-login-password --region "${AWS_REGION}" \
-      | docker login --username AWS --password-stdin "${IMAGE_NAME%%/*}"
+      | sudo docker login --username AWS --password-stdin "${IMAGE_NAME%%/*}"
   fi
 
-  # 3.4) Pull da imagem
+  # Puxa a nova imagem
   echo "⬇️ Pull da imagem ${IMAGE_NAME}..."
-  docker pull "${IMAGE_NAME}"
+  sudo docker pull "${IMAGE_NAME}"
 
-  # 3.5) Para e remove container antigo, se houver
-  if docker ps -q -f name="${CONTAINER_NAME}" | grep -q .; then
+  # Para e remove container antigo, se existir
+  if sudo docker ps -q -f name="${CONTAINER_NAME}" | grep -q .; then
     echo "🛑 Parando container existente..."
-    docker stop "${CONTAINER_NAME}"
+    sudo docker stop "${CONTAINER_NAME}"
   fi
-  if docker ps -aq -f name="${CONTAINER_NAME}" | grep -q .; then
+  if sudo docker ps -aq -f name="${CONTAINER_NAME}" | grep -q .; then
     echo "🗑️ Removendo container anterior..."
-    docker rm "${CONTAINER_NAME}"
+    sudo docker rm "${CONTAINER_NAME}"
   fi
 
-  # 3.6) Inicia novo container
+  # Inicia novo container
   echo "⚡ Iniciando novo container..."
-  docker run -d \
+  sudo docker run -d \
     --name "${CONTAINER_NAME}" \
     -p ${REMOTE_PORT}:${CONTAINER_PORT} \
     "${IMAGE_NAME}"
