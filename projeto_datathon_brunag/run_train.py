@@ -2,6 +2,7 @@ import pandas as pd
 import joblib
 import os
 import json
+import yaml
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
@@ -18,6 +19,13 @@ from utils.paths import (
 
 def main():
     print("Starting training script")
+
+    # 0) Carrega configuração de hiper-parâmetros
+    print("Loading hyperparameter config...")
+    with open("config.yaml", "r") as f:
+        cfg = yaml.safe_load(f)
+    rf_params = cfg.get("random_forest", {})
+    print(f"RandomForest params: {rf_params}")
 
     # 1) Carrega Parquets
     print("Loading parquet files...")
@@ -61,7 +69,7 @@ def main():
 
     # 7) Train/test split
     X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.3, random_state=42
+        X, y, test_size=0.3, random_state=42, stratify=y
     )
 
     # 8) SMOTE
@@ -69,9 +77,9 @@ def main():
     smote = SMOTE(random_state=42)
     X_res, y_res = smote.fit_resample(X_train, y_train)
 
-    # 9) Treino
-    print("Training RandomForest...")
-    model = RandomForestClassifier(n_estimators=100, random_state=42)
+    # 9) Treino com parâmetros do config
+    print("Training RandomForestClassifier...")
+    model = RandomForestClassifier(**rf_params, random_state=42)
     model.fit(X_res, y_res)
 
     # 10) Avaliação

@@ -1,0 +1,12 @@
+random_forest:
+  n_estimators: 200
+  max_depth: 20
+  min_samples_split: 5
+  class_weight: "balanced"
+
+# Se você quiser configurar clustering também:
+kmeans:
+  n_clusters: 4
+  init: "k-means++"
+  n_init: 10
+  max_iter: 300

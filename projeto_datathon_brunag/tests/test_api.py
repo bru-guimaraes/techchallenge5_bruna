@@ -1,20 +1,27 @@
+import json
+import pytest
 from fastapi.testclient import TestClient
-from app.main import app
+from application import app
 
 client = TestClient(app)
 
-def test_predict_endpoint():
+def test_root():
+    r = client.get("/")
+    assert r.status_code==200
+    assert "mensagem" in r.json()
+
+def test_health():
+    r = client.get("/health")
+    assert r.status_code==200
+    assert r.json()=={"status":"ok"}
+
+def test_predict_valid():
     payload = {
-        "cliente": "EmpresaX",
-        "nivel_profissional": "Pleno",
-        "idioma_requerido": "Inglês",
-        "eh_sap": True,
-        "area_atuacao": "Desenvolvimento",
-        "nivel_ingles": "Avançado",
-        "nivel_espanhol": "Básico",
-        "formacao": "Superior Completo",
-        "conhecimentos_tecnicos": "Python, SQL"
+      "area_atuacao":"Vendas",
+      "nivel_ingles":"medio",
+      "nivel_espanhol":"baixo",
+      "nivel_academico":"superior"
     }
-    response = client.post("/predict", json=payload)
-    assert response.status_code == 200
-    assert "contratado" in response.json()
+    r = client.post("/predict", json=payload)
+    assert r.status_code==200
+    assert "prediction" in r.json()

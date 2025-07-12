@@ -5,12 +5,16 @@ import joblib
 import json
 import pandas as pd
 import os
+import logging
 
 from utils.paths import PATH_MODEL
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 app = FastAPI()
 
 # Carrega modelo e lista de features
+
 try:
     modelo = joblib.load(PATH_MODEL)
     features_path = os.path.join(os.path.dirname(PATH_MODEL), "features.json")

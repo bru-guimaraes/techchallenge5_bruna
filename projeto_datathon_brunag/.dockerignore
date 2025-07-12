@@ -8,10 +8,6 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Dados brutos e parquet
-data/raw_downloads/
-data/parquet/
-
 # Modelos gerados localmente
 model/
 *.pkl
