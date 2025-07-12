@@ -1,20 +1,44 @@
 @echo off
+SETLOCAL ENABLEDELAYEDEXPANSION
 
-echo Criando ambiente virtual...
-python -m venv .venv
+REM ----------------------------------------------------
+REM build_local.bat — build e run da API via Docker
+REM ----------------------------------------------------
 
-echo Ativando ambiente virtual...
-call .venv\Scripts\activate.bat
+echo ==============================================
+echo 🚀 Stopping any running "datathon-api-local"…
+echo ==============================================
+docker stop datathon-api-local >nul 2>&1
+docker rm datathon-api-local   >nul 2>&1
 
-echo Instalando dependências do requirements.txt...
-call .venv\Scripts\python.exe -m pip install --upgrade pip
-call .venv\Scripts\python.exe -m pip install -r requirements.txt
+echo.
+echo ==============================================
+echo 🔨 Building Docker image "datathon-api:local"…
+echo ==============================================
+docker build --no-cache -t datathon-api:local .
 
-echo Extraindo arquivos dos .zip...
-call .venv\Scripts\python.exe utils\extrair_json_de_zip.py
+if ERRORLEVEL 1 (
+    echo ❌ Falha ao buildar a imagem Docker.
+    exit /b 1
+)
 
-echo Treinando o modelo...
-call .venv\Scripts\python.exe run_train.py
+echo.
+echo ==============================================
+echo ▶️ Running container "datathon-api-local"…
+echo ==============================================
+docker run -d --name datathon-api-local -p 8000:8000 datathon-api:local
 
-echo Iniciando a API...
-call .venv\Scripts\uvicorn.exe application:app --reload
+if ERRORLEVEL 1 (
+    echo ❌ Falha ao iniciar o container Docker.
+    exit /b 1
+)
+
+echo.
+echo ==============================================
+echo ✅ Container iniciado!
+echo A API está disponível em: http://localhost:8000
+echo Para parar o container, execute:
+echo     docker stop datathon-api-local
+echo ==============================================
+ENDLOCAL
+pause

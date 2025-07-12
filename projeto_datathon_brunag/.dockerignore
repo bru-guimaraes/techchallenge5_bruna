@@ -1,0 +1,26 @@
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Caches e bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Dados brutos e parquet
+data/raw_downloads/
+data/parquet/
+
+# Modelos gerados localmente
+model/
+*.pkl
+features.json
+
+# Ambiente e credenciais
+.env
+.env.*
+
+# IDEs
+.vscode/
+.idea/
