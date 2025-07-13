@@ -8,7 +8,12 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Ambiente e credenciais
+# Modelos gerados localmente
+# só ignora se não estivermos no contexto de build Docker
+!model/
+model/*.tmp
+
+# Arquivos de configuração sensíveis
 .env
 .env.*
 

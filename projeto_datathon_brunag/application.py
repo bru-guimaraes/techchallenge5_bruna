@@ -1,29 +1,32 @@
 import time
 import logging
+import sys
+import os
+import json
+
 from fastapi import FastAPI, HTTPException, Response, Request, UploadFile, File
 from pythonjsonlogger import jsonlogger
 from prometheus_client import Counter, Histogram, generate_latest, CONTENT_TYPE_LATEST
 from pydantic import BaseModel
 from typing import Literal, Dict, List
 import joblib
-import json
 import pandas as pd
-import os
 import shap
-import sys
 
 from utils.paths import PATH_MODEL
 
 # ——— Logger JSON ——————————————————————————————————————
 logger = logging.getLogger("uvicorn.access")
 handler = logging.StreamHandler()
-formatter = jsonlogger.JsonFormatter('%(asctime)s %(name)s %(levelname)s %(message)s')
+formatter = jsonlogger.JsonFormatter(
+    '%(asctime)s %(name)s %(levelname)s %(message)s'
+)
 handler.setFormatter(formatter)
 logger.addHandler(handler)
 logger.setLevel(logging.INFO)
 # ————————————————————————————————————————————————————————
 
-# ——— Métricas Prometheus ————————————————————————————
+# ——— Métricas Prometheus —————————————————————————————
 REQUEST_COUNT = Counter(
     'request_count', 'Total HTTP requests',
     ['method', 'endpoint', 'http_status']
@@ -341,7 +344,7 @@ def compare(req: CompareRequest):
         df = pd.DataFrame([r.dict()])
         df_enc = pd.get_dummies(df)
         df_aligned = df_enc.reindex(columns=feature_names, fill_value=0)
-        prob = modelo.predict_proba(df_aligned)[:,1][0]
+        prob = modelo.predict_proba(df_aligned)[:, 1][0]
         pred = int(prob >= THRESHOLD)
         shap_v = explainer.shap_values(df_aligned)[1][0]
         return pred, prob, dict(zip(feature_names, shap_v))
@@ -403,7 +406,7 @@ def feedback(fb: FeedbackRequest):
     return {"status": "ok"}
 # ————————————————————————————————————————————————————————
 
-# ——— 12) /historical_data ——————————————————————————————
+# ——— 12) /historical_data —————————————————————————————
 @app.post(
     "/historical_data",
     summary="Upload de dados históricos",
