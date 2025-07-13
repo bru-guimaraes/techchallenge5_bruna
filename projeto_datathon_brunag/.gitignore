@@ -23,8 +23,10 @@ data/parquet/
 data/historical_data.csv
 
 # Models and artifacts - ignora tudo, exceto features.json
-model/*
-!model/features.json
+# Ignora .json e .pkl somente dentro da pasta model/
+model/*.json
+model/*.pkl
+
 
 # (Opcional) sempre ignore arquivos binários soltos
 *.pkl
