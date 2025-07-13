@@ -43,8 +43,27 @@ def main():
 
     # 2) Merge
     print("🔗 Merging dataframes...")
-    df = merge_dataframes(applicants, prospects, vagas)
-    print(f"➡️  Merged shape: {df.shape}")
+    try:
+        df = merge_dataframes(applicants, prospects, vagas)
+        print(f"➡️  Merged shape: {df.shape}")
+    except KeyError as e:
+        print(f"⚠️ Merge falhou (dados não encontrados ou vazio): {e}")
+        df = None
+
+    # 3–11) Se não há dados, cria um modelo vazio e sai
+    if df is None or df.empty:
+        print("⚠️ Sem dados para treino: criando modelo vazio e saindo")
+        os.makedirs(os.path.dirname(model_path), exist_ok=True)
+        # salva um modelo padrão sem treino
+        dummy = RandomForestClassifier(random_state=42)
+        joblib.dump(dummy, model_path)
+        print(f"💾 Modelo vazio salvo em {model_path}")
+        # cria também features.json vazio
+        features_path = os.path.join(os.path.dirname(model_path), "features.json")
+        with open(features_path, "w", encoding="utf-8") as f:
+            json.dump([], f)
+        print(f"✅ Features (vazio) salvo em {features_path}")
+        return
 
     # 3) Renomeia colunas aninhadas
     print("✏️ Renaming columns...")
