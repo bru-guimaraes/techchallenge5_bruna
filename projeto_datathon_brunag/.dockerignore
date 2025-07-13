@@ -8,10 +8,10 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Não ignorar o diretório de modelo no build
 # Modelos gerados localmente
-# só ignora se não estivermos no contexto de build Docker
-!model/
-model/*.tmp
+#model/
+#model/*.tmp
 
 # Arquivos de configuração sensíveis
 .env

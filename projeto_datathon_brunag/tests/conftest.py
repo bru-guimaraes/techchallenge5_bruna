@@ -28,23 +28,28 @@ def pytest_configure(config):
     """
     Executado antes de carregar os módulos de teste.
     Aqui criamos:
-      - O arquivo PATH_MODEL (modelo dummy)
-      - O features.json (lista base)
-      - Fazemos monkey-patch no shap.TreeExplainer
+      1) O arquivo PATH_MODEL (modelo dummy)
+      2) O features.json (lista base de features)
+      3) Fazemos monkey-patch no shap.TreeExplainer para usar DummyExplainer
     """
-    # 1) Garante que a pasta existe
+    # 1) Garante que a pasta do modelo existe
     model_dir = os.path.dirname(PATH_MODEL)
     os.makedirs(model_dir, exist_ok=True)
 
-    # 2) Cria o dummy model
+    # 2) Cria e salva o modelo dummy
     dummy_model = DummyModel()
     joblib.dump(dummy_model, PATH_MODEL)
 
     # 3) Cria o features.json com as 4 features básicas
     features_file = os.path.join(model_dir, "features.json")
-    base_features = ["area_atuacao", "nivel_ingles", "nivel_espanhol", "nivel_academico"]
+    base_features = [
+        "area_atuacao",
+        "nivel_ingles",
+        "nivel_espanhol",
+        "nivel_academico"
+    ]
     with open(features_file, "w", encoding="utf-8") as f:
         json.dump(base_features, f, ensure_ascii=False)
 
-    # 4) Stub do explainer
+    # 4) Stub do explainer para que TreeExplainer retorne DummyExplainer
     shap.TreeExplainer = lambda model: DummyExplainer()

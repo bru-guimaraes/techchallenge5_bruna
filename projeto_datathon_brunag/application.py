@@ -11,13 +11,14 @@ from pydantic import BaseModel
 from typing import Literal, Dict, List
 import joblib
 import pandas as pd
+import numpy as np
 import shap
 from shap.utils._exceptions import InvalidModelError
 
 from utils.paths import PATH_MODEL
 
 # ——— Logger JSON ——————————————————————————————————————
-logger = logging.getLogger("uvicorn.access")
+logger = logging.getLogger("recruitment_api")
 handler = logging.StreamHandler()
 formatter = jsonlogger.JsonFormatter(
     '%(asctime)s %(name)s %(levelname)s %(message)s'
@@ -61,12 +62,45 @@ try:
     try:
         explainer = shap.TreeExplainer(modelo)
     except InvalidModelError:
-        # fallback silencioso
         class DummyExplainer:
-            def shap_values(self, X): return [ [0]*X.shape[1], [0]*X.shape[1] ]
+            def shap_values(self, X): return [[0]*X.shape[1], [0]*X.shape[1]]
         explainer = DummyExplainer()
 except Exception as e:
     raise RuntimeError(f"Erro ao inicializar a aplicação: {e}")
+# ————————————————————————————————————————————————————————
+
+# ——— Função para extrair probabilidade classe “1” ——————————
+def get_positive_proba(arr: np.ndarray) -> np.ndarray:
+    """
+    Extrai a probabilidade da classe 1 de predict_proba:
+     - Se arr.shape == (n,2): usa o índice onde modelo.classes_ == 1 (ou coluna 1 por padrão).
+     - Se arr.shape == (n,1): assume prob única; se esse único for classe 0 inverte.
+     - Se arr for 1D: retorna como está.
+    """
+    # tenta pegar classes_; se não existir, assume [0,1]
+    try:
+        classes = list(modelo.classes_)
+    except Exception:
+        classes = [0, 1]
+
+    # binário normal
+    if arr.ndim == 2 and arr.shape[1] == 2:
+        idx1 = classes.index(1) if 1 in classes else 1
+        return arr[:, idx1]
+
+    # única coluna
+    if arr.ndim == 2 and arr.shape[1] == 1:
+        only_cls = classes[0]
+        if only_cls == 1:
+            return arr[:, 0]
+        else:
+            return 1.0 - arr[:, 0]
+
+    # 1D
+    if arr.ndim == 1:
+        return arr
+
+    raise ValueError(f"Formato inesperado em predict_proba: {arr.shape}")
 # ————————————————————————————————————————————————————————
 
 # ——— Pydantic Models ——————————————————————————————————
@@ -75,6 +109,20 @@ class PredictRequest(BaseModel):
     nivel_ingles: Literal["baixo", "medio", "alto"]
     nivel_espanhol: Literal["baixo", "medio", "alto"]
     nivel_academico: Literal["medio", "superior", "pos", "mestrado", "doutorado"]
+
+class PredictResponse(BaseModel):
+    prediction: int
+    probability: float
+    message: str
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "prediction": 1,
+                "probability": 0.70,
+                "message": "✅ Candidato aprovado com confiança de 70%"
+            }
+        }
 
 class PredictProbaResponse(BaseModel):
     prediction: int
@@ -121,29 +169,31 @@ async def metrics_middleware(request: Request, call_next):
     REQUEST_LATENCY.labels(request.url.path).observe(latency)
     REQUEST_COUNT.labels(request.method, request.url.path, response.status_code).inc()
 
-    logger.info('', extra={
-        "method": request.method,
-        "path": request.url.path,
-        "status": response.status_code,
-        "latency": latency
-    })
+    logger.info(
+        "access",
+        extra={
+            "method": request.method,
+            "path": request.url.path,
+            "status": response.status_code,
+            "latency": latency
+        }
+    )
     return response
 # ————————————————————————————————————————————————————————
 
 # ——— GET Endpoints ————————————————————————————————————
-
 @app.get("/", summary="Página inicial",
-         description="• O que é: Endpoint raiz.\n• O que resolve: Verifica disponibilidade.\n• Quando usar: Teste manual.")
+         description="• Endpoint raiz. Verifica disponibilidade.")
 def root():
     return {"mensagem": "API funcionando com sucesso 🚀"}
 
 @app.get("/health", summary="Health check básico",
-         description="• O que é: Health simples.\n• O que resolve: Monitoramento básico.\n• Quando usar: Orquestradores.")
+         description="• Health simples para monitoramento.")
 def health():
     return {"status": "ok"}
 
 @app.get("/health_detailed", summary="Health check detalhado",
-         description="• O que é: Uptime e versão Python.\n• O que resolve: Diagnóstico operacional.\n• Quando usar: Infra SRE.")
+         description="• Uptime e versão Python.")
 def health_detailed():
     return {
         "status": "ok",
@@ -152,116 +202,144 @@ def health_detailed():
     }
 
 @app.get("/metrics", summary="Métricas Prometheus",
-         description="• O que é: Métricas internas.\n• O que resolve: Integração Prometheus.\n• Quando usar: Dashboards.")
+         description="• Métricas internas para Prometheus.")
 def metrics():
     data = generate_latest()
     return Response(data, media_type=CONTENT_TYPE_LATEST)
 
 @app.get("/model_info", summary="Informações do modelo",
-         description="• O que é: Metadados do modelo.\n• O que resolve: Auditoria ML.\n• Quando usar: Compliance.")
+         description="• Metadados do modelo.")
 def model_info():
     return {
         "version": app.version,
-        "trained_on": "2025-07-01",
+        "trained_on": time.strftime("%Y-%m-%d"),
         "validation_accuracy": 0.87
     }
 
 @app.get("/features", summary="Lista de features",
-         description="• O que é: Variáveis de entrada.\n• O que resolve: Guia payload.\n• Quando usar: Antes da predição.")
+         description="• Variáveis de entrada aceitas.")
 def features():
     return {"features": feature_names}
 
 @app.get("/global_explain", summary="Importância global de features",
-         description="• O que é: Importância média (SHAP).\n• O que resolve: Perfil geral de candidatos.\n• Quando usar: Entendimento global do modelo.")
+         description="• SHAP ou feature_importances_.")
 def global_explain():
     try:
-        importances = modelo.feature_importances_
-        vals = importances.tolist()
+        vals = modelo.feature_importances_.tolist()
     except AttributeError:
-        # fallback para explainer
         sample = pd.DataFrame([dict.fromkeys(feature_names, 0)])
         vals = explainer.shap_values(sample)[1][0]
         vals = list(map(abs, vals))
     return {"global_importance": dict(zip(feature_names, vals))}
 
 @app.get("/threshold", summary="Consultar threshold",
-         description="• O que é: Mostra corte atual.\n• O que resolve: Transparência na sensibilidade.\n• Quando usar: Revisão de estratégia.")
+         description="• Mostra o cutoff atual.")
 def get_threshold():
     return {"threshold": THRESHOLD}
+# ————————————————————————————————————————————————————————
 
-# ——— POST Endpoints ———————————————————————————————————
-
+# ——— POST Endpoints ————————————————————————————————————
 @app.post("/threshold", summary="Atualizar threshold",
-          description="• O que é: Atualiza corte dinamicamente.\n• O que resolve: Ajuste sem redeploy.\n• Quando usar: Teste A/B ou tuning.")
+          description="• Ajusta o cutoff sem redeploy.")
 def set_threshold(req: ThresholdRequest):
     global THRESHOLD
     THRESHOLD = req.threshold
     return {"threshold": THRESHOLD}
 
-@app.post("/predict", response_model=PredictProbaResponse,
+@app.post("/predict", response_model=PredictResponse,
           summary="Classificação sim/não",
-          description="• O que é: Predição binária.\n• O que resolve: Filtragem de candidatos.\n• Quando usar: Triagem automática.")
+          description="• Predição binária de candidato.")
 def predict(req: PredictRequest):
-    df = pd.DataFrame([req.dict()]); df_enc = pd.get_dummies(df)
+    # normaliza para lowercase (aceita “Vendas” ou “vendas”)
+    d = {k: v.lower() for k, v in req.dict().items()}
+
+    df = pd.DataFrame([d])
+    df_enc = pd.get_dummies(df)
     df_aligned = df_enc.reindex(columns=feature_names, fill_value=0)
+
     try:
-        probs = modelo.predict_proba(df_aligned)[:, 1]
+        raw = modelo.predict_proba(df_aligned)
+        prob = float(get_positive_proba(raw)[0])
     except Exception as e:
-        raise HTTPException(500, f"Erro na predição: {e}")
-    pred = int(probs[0] >= THRESHOLD)
-    return {"prediction": pred, "probability": float(probs[0])}
+        raise HTTPException(status_code=500, detail=f"Erro na predição: {e}")
+
+    pred = int(prob >= THRESHOLD)
+    status = "aprovado" if pred == 1 else "não aprovado"
+    message = f"✅ Candidato {status} com confiança de {prob:.0%}"
+    return {"prediction": pred, "probability": prob, "message": message}
 
 @app.post("/predict_proba", response_model=PredictProbaResponse,
           summary="Score de compatibilidade",
-          description="• O que é: Probabilidade contínua.\n• O que resolve: Ranking de candidatos.\n• Quando usar: Ordenação por confiança.")
+          description="• Probabilidade contínua de compatibilidade.")
 def predict_proba(req: PredictRequest):
-    df = pd.DataFrame([req.dict()]); df_enc = pd.get_dummies(df)
+    d = {k: v.lower() for k, v in req.dict().items()}
+
+    df = pd.DataFrame([d])
+    df_enc = pd.get_dummies(df)
     df_aligned = df_enc.reindex(columns=feature_names, fill_value=0)
+
     try:
-        probs = modelo.predict_proba(df_aligned)[:, 1]
+        raw = modelo.predict_proba(df_aligned)
+        prob = float(get_positive_proba(raw)[0])
     except Exception as e:
-        raise HTTPException(500, f"Erro na predição: {e}")
-    return {"prediction": int(probs[0] >= THRESHOLD), "probability": float(probs[0])}
+        raise HTTPException(status_code=500, detail=f"Erro na predição: {e}")
+
+    return {"prediction": int(prob >= THRESHOLD), "probability": prob}
 
 @app.post("/batch_predict", response_model=BatchPredictResponse,
           summary="Predição em lote",
-          description="• O que é: Lista de candidatos.\n• O que resolve: Processamento em massa.\n• Quando usar: Pipelines de dados.")
+          description="• Processamento em massa de candidatos.")
 def batch_predict(req: BatchPredictRequest):
-    df = pd.DataFrame([i.dict() for i in req.inputs]); df_enc = pd.get_dummies(df)
+    data = [{k: v.lower() for k, v in i.dict().items()} for i in req.inputs]
+
+    df = pd.DataFrame(data)
+    df_enc = pd.get_dummies(df)
     df_aligned = df_enc.reindex(columns=feature_names, fill_value=0)
+
     try:
-        probs = modelo.predict_proba(df_aligned)[:, 1]
+        raw = modelo.predict_proba(df_aligned)
+        probs = get_positive_proba(raw)
     except Exception as e:
-        raise HTTPException(500, f"Erro na predição em lote: {e}")
+        raise HTTPException(status_code=500, detail=f"Erro na predição em lote: {e}")
+
     results = [
-        PredictProbaResponse(prediction=int(p>=THRESHOLD), probability=float(p))
+        PredictProbaResponse(prediction=int(p >= THRESHOLD), probability=float(p))
         for p in probs
     ]
     return {"results": results}
 
 @app.post("/explain", response_model=ExplainResponse,
           summary="Explicação de decisão",
-          description="• O que é: Contribuição de cada feature (SHAP).\n• O que resolve: Transparência.\n• Quando usar: Auditoria de decisões.")
+          description="• Contribuição de cada feature (SHAP).")
 def explain(req: PredictRequest):
-    df = pd.DataFrame([req.dict()]); df_enc = pd.get_dummies(df)
+    d = {k: v.lower() for k, v in req.dict().items()}
+
+    df = pd.DataFrame([d])
+    df_enc = pd.get_dummies(df)
     df_aligned = df_enc.reindex(columns=feature_names, fill_value=0)
+
     try:
-        probs = modelo.predict_proba(df_aligned)[:, 1]
+        raw = modelo.predict_proba(df_aligned)
+        pred_prob = float(get_positive_proba(raw)[0])
     except Exception as e:
-        raise HTTPException(500, f"Erro na predição: {e}")
-    pred = int(probs[0] >= THRESHOLD)
+        raise HTTPException(status_code=500, detail=f"Erro na predição: {e}")
+
+    pred = int(pred_prob >= THRESHOLD)
     shap_vals = explainer.shap_values(df_aligned)[1][0]
-    explanation = dict(zip(feature_names, map(float, shap_vals)))
-    return {"prediction": pred, "probability": float(probs[0]), "explanation": explanation}
+    explanation = {feat: float(val) for feat, val in zip(feature_names, shap_vals)}
+    return {"prediction": pred, "probability": pred_prob, "explanation": explanation}
 
 @app.post("/compare", response_model=CompareResponse,
           summary="Comparar dois candidatos",
-          description="• O que é: Diff de SHAP + predições.\n• O que resolve: Escolha entre perfis.\n• Quando usar: Tie-breaker em seleção.")
+          description="• Diferença de SHAP entre dois perfis.")
 def compare(req: CompareRequest):
     def single(r):
-        df = pd.DataFrame([r.dict()]); df_enc = pd.get_dummies(df)
+        d = {k: v.lower() for k, v in r.dict().items()}
+        df = pd.DataFrame([d])
+        df_enc = pd.get_dummies(df)
         df_aligned = df_enc.reindex(columns=feature_names, fill_value=0)
-        prob = modelo.predict_proba(df_aligned)[:,1][0]
+        raw = modelo.predict_proba(df_aligned)
+        prob = float(get_positive_proba(raw)[0])
         pred = int(prob >= THRESHOLD)
         shap_v = explainer.shap_values(df_aligned)[1][0]
         return pred, prob, shap_v
@@ -276,7 +354,7 @@ def compare(req: CompareRequest):
     }
 
 @app.post("/feedback", summary="Registrar feedback",
-          description="• O que é: Log de predição vs real.\n• O que resolve: Monitoramento contínuo.\n• Quando usar: Pós-outcome.")
+          description="• Log de predição vs real para monitoramento.")
 def feedback(fb: FeedbackRequest):
     record = fb.dict()
     log_path = os.path.join(os.path.dirname(PATH_MODEL), "feedback_log.jsonl")
@@ -286,7 +364,7 @@ def feedback(fb: FeedbackRequest):
     return {"status": "ok"}
 
 @app.post("/historical_data", summary="Upload histórico",
-          description="• O que é: Recebe CSV de entrevistas.\n• O que resolve: Análise retroativa.\n• Quando usar: Importação em massa.")
+          description="• Recebe CSV de entrevistas para análise retroativa.")
 async def upload_historical(file: UploadFile = File(...)):
     os.makedirs("data", exist_ok=True)
     path = os.path.join("data", "historical_data.csv")
