@@ -1,51 +1,68 @@
-from unidecode import unidecode
 import pandas as pd
+import os
 
-# Dicionários de valores aceitos (expanda conforme necessário)
-VALID_INGLES = {'baixo', 'medio', 'alto'}
-VALID_ESPANHOL = {'baixo', 'medio', 'alto'}
-# Expanda se quiser mais aliases para nivel_academico
-ACADEMIC_MAP = {
-    'medio': 'medio',
-    'ensino medio': 'medio',
-    'superior': 'superior',
-    'ensino superior': 'superior',
-    'pos': 'pos',
-    'pós': 'pos',
-    'pos graduacao': 'pos',
-    'pós graduacao': 'pos',
-    'pos-graduacao': 'pos',
-    'pós-graduação': 'pos',
-    'mestrado': 'mestrado',
-    'doutorado': 'doutorado',
-}
+# Caminhos dos parquets de entrada
+DIR = "data/parquet"
+applicants_path = os.path.join(DIR, "applicants/applicants.parquet")
+prospects_path  = os.path.join(DIR, "prospects/prospects.parquet")
+vagas_path      = os.path.join(DIR, "vagas/vagas.parquet")
 
-def normalize_value(val):
-    if not isinstance(val, str):
-        return val
-    # Remove acentos, põe minúsculo, tira espaços extras
-    return unidecode(val).strip().lower()
+def gerar_dataset_treino():
+    """
+    Gera dataset unificado a partir dos parquets de applicants, prospects e vagas.
+    Realiza merge, seleção de colunas, gera target e salva como Parquet para treino do modelo.
+    """
+    # 1. Carrega dados brutos dos três arquivos
+    applicants = pd.read_parquet(applicants_path)
+    prospects  = pd.read_parquet(prospects_path)
+    vagas      = pd.read_parquet(vagas_path)
 
-def preprocess_input(data: PredictRequest, feature_names):
-    d = {k: normalize_value(v) for k, v in data.dict().items()}
+    # 2. Merge applicants + prospects pela identificação do candidato
+    df = applicants.merge(
+        prospects, 
+        left_on="codigo_profissional", 
+        right_on="codigo", 
+        how="inner"
+    )
 
-    # Normaliza nivel_ingles
-    if d['nivel_ingles'] not in VALID_INGLES:
-        raise ValueError(f"nivel_ingles inválido: '{d['nivel_ingles']}'. Valores aceitos: {VALID_INGLES}")
-    # Normaliza nivel_espanhol
-    if d['nivel_espanhol'] not in VALID_ESPANHOL:
-        raise ValueError(f"nivel_espanhol inválido: '{d['nivel_espanhol']}'. Valores aceitos: {VALID_ESPANHOL}")
-    # Normaliza nivel_academico com alias/flexibilidade
-    if d['nivel_academico'] not in ACADEMIC_MAP:
-        raise ValueError(
-            f"nivel_academico inválido: '{d['nivel_academico']}'. "
-            f"Valores aceitos: {list(ACADEMIC_MAP.keys())}"
-        )
-    d['nivel_academico'] = ACADEMIC_MAP[d['nivel_academico']]
+    # 3. Merge com vagas para adicionar contexto da vaga
+    df = df.merge(vagas, on="vaga_id", how="left")
 
-    # area_atuacao pode ser flexível, mas mantenha como está ou adicione lógica parecida se quiser mapeamento
+    # 4. Seleção das colunas relevantes para modelagem (ajuste conforme necessidade)
+    features = [
+        'informacoes_profissionais.area_atuacao',
+        'formacao_e_idiomas.nivel_academico',
+        'formacao_e_idiomas.nivel_ingles',
+        'formacao_e_idiomas.nivel_espanhol',
+        'nivel_academico',   # da vaga
+        'nivel_ingles',      # da vaga
+        'nivel_espanhol',    # da vaga
+        'areas_atuacao',     # da vaga
+        'situacao_candidado' # status do prospect
+    ]
+    df_treino = df[features].copy()
 
-    df = pd.DataFrame([d])
-    df_enc = pd.get_dummies(df)
-    df_aligned = df_enc.reindex(columns=feature_names, fill_value=0)
-    return df_aligned
+    # 5. Cria a coluna target: contratado = 1 se status contém "contratad", senão 0
+    df_treino['contratado'] = (
+        df_treino['situacao_candidado']
+        .fillna("")
+        .str.lower()
+        .str.contains("contratad")
+        .astype(int)
+    )
+
+    # 6. Remove duplicatas e linhas com informações essenciais faltando
+    df_treino = df_treino.drop_duplicates().dropna(subset=[
+        'informacoes_profissionais.area_atuacao',
+        'formacao_e_idiomas.nivel_academico',
+        'formacao_e_idiomas.nivel_ingles',
+        'formacao_e_idiomas.nivel_espanhol'
+    ])
+
+    # 7. Salva o dataset pronto para treino
+    output_path = os.path.join(DIR, "treino_unificado.parquet")
+    df_treino.to_parquet(output_path, index=False)
+    print(f"✅ Dataset unificado pronto para treino salvo em: {output_path}")
+
+if __name__ == "__main__":
+    gerar_dataset_treino()

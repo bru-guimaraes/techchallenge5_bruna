@@ -10,81 +10,50 @@ from sklearn.metrics import classification_report
 from imblearn.over_sampling import SMOTE
 from collections import Counter
 
-from utils.data_merger import merge_dataframes
-from utils.paths import (
-    PATH_PARQUET_APPLICANTS,
-    PATH_PARQUET_PROSPECTS,
-    PATH_PARQUET_VAGAS,
-    PATH_MODEL as CONST_PATH_MODEL,
-)
+from utils.paths import PATH_MODEL as CONST_PATH_MODEL
 
 def main():
     print("🚀 Starting training script")
 
-    # Respeita variável de ambiente PATH_MODEL, senão usa o valor padrão
+    # Permite sobrescrever o caminho do modelo por variável de ambiente
     model_path = os.getenv("PATH_MODEL", CONST_PATH_MODEL)
 
-    # 0) Carrega configuração de hiper-parâmetros
+    # Permite sobrescrever o parquet de treino via variável de ambiente
+    parquet_path = os.getenv("PATH_TREINO_PARQUET", "data/parquet/treino_unificado.parquet")
+
+    # 0) Carrega configuração de hiperparâmetros do RandomForest
     print("🔧 Loading hyperparameter config...")
     with open("config.yaml", "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     rf_params = cfg.get("random_forest", {})
-    # Ajusta max_features 'auto' → 'sqrt'
     if rf_params.get("max_features") == "auto":
         rf_params["max_features"] = "sqrt"
     print(f"📋 RandomForest params: {rf_params}")
 
-    # 1) Carrega dados
-    print("📥 Loading parquet files...")
-    applicants = pd.read_parquet(PATH_PARQUET_APPLICANTS)
-    prospects  = pd.read_parquet(PATH_PARQUET_PROSPECTS)
-    vagas      = pd.read_parquet(PATH_PARQUET_VAGAS)
-    print(f"🔢 Shapes — applicants: {applicants.shape}, prospects: {prospects.shape}, vagas: {vagas.shape}")
-
-    # 2) Merge
-    print("🔗 Merging dataframes...")
-    try:
-        df = merge_dataframes(applicants, prospects, vagas)
-        print(f"➡️  Merged shape: {df.shape}")
-    except KeyError as e:
-        print(f"⚠️ Merge falhou (dados não encontrados ou vazio): {e}")
-        df = None
-
-    # Colunas base para features
-    base_features = ['area_atuacao', 'nivel_ingles', 'nivel_espanhol', 'nivel_academico']
-
-    # Caso sem dados, salva modelo vazio e default features não vazias
-    if df is None or df.empty:
-        print("⚠️ Sem dados para treino: criando modelo vazio e saindo")
-        os.makedirs(os.path.dirname(model_path), exist_ok=True)
-        # salva um modelo padrão sem treino
-        dummy = RandomForestClassifier(random_state=42)
-        joblib.dump(dummy, model_path)
-        print(f"💾 Modelo vazio salvo em {model_path}")
-        # salva features padrão
-        features_path = os.path.join(os.path.dirname(model_path), "features.json")
-        with open(features_path, "w", encoding="utf-8") as f:
-            json.dump(base_features, f, ensure_ascii=False)
-        print(f"✅ Features padrão salvo em {features_path}")
+    # 1) Carrega dataset de treino já unificado
+    if not os.path.exists(parquet_path):
+        print(f"❌ Parquet de treino não encontrado em {parquet_path}. Execute o pré-processamento antes.")
         return
 
-    # 3) Renomeia colunas aninhadas
-    print("✏️ Renaming columns...")
-    df.rename(columns={
-        'informacoes_profissionais.area_atuacao': 'area_atuacao',
-        'formacao_e_idiomas.nivel_academico':     'nivel_academico',
-        'formacao_e_idiomas.nivel_ingles':        'nivel_ingles',
-        'formacao_e_idiomas.nivel_espanhol':      'nivel_espanhol'
-    }, inplace=True)
+    df = pd.read_parquet(parquet_path)
+    print(f"🔢 Shape do dataset unificado: {df.shape}")
 
-    # 4) Gera target
-    print("🎯 Generating target 'contratado'...")
-    df['contratado'] = (df['situacao_candidado'] == 'Contratado pela Decision').astype(int)
+    # Colunas base para features (ajuste conforme evolução do projeto)
+    base_features = [
+        'informacoes_profissionais.area_atuacao',
+        'formacao_e_idiomas.nivel_academico',
+        'formacao_e_idiomas.nivel_ingles',
+        'formacao_e_idiomas.nivel_espanhol',
+        'nivel_academico',
+        'nivel_ingles',
+        'nivel_espanhol',
+        'areas_atuacao'
+    ]
 
-    # 5) Define features e filtra NAs
+    # 2) Remove linhas com valores nulos em qualquer feature essencial ou target
     df = df.dropna(subset=base_features + ['contratado'])
 
-    # 6) One-hot + salva lista de features
+    # 3) One-hot encoding e salva lista de features
     print("📦 One-hot encoding and saving feature list...")
     X = pd.get_dummies(df[base_features]).astype(float)
     y = df['contratado']
@@ -95,13 +64,13 @@ def main():
         json.dump(feature_names, f, ensure_ascii=False)
     print(f"✅ Features saved to {features_path}")
 
-    # 7) Train/test split
+    # 4) Train/test split
     print("🔀 Train/test split...")
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.3, random_state=42, stratify=y
     )
 
-    # 8) SMOTE com fallback
+    # 5) SMOTE para balancear as classes
     print("⚖️ Applying SMOTE...")
     try:
         smote = SMOTE(random_state=42)
@@ -111,21 +80,21 @@ def main():
         print(f"⚠️ SMOTE skipped (single class): {e}")
         X_train_res, y_train_res = X_train, y_train
 
-    # 9) Treino com RF
+    # 6) Treina o RandomForest
     print("🛠️ Training RandomForestClassifier...")
     model = RandomForestClassifier(**rf_params, random_state=42)
     model.fit(X_train_res, y_train_res)
 
-    # 10) Avaliação
+    # 7) Avaliação no conjunto de teste
     print("\n📊 Classification Report:")
     y_pred = model.predict(X_test)
     print(classification_report(y_test, y_pred))
 
-    # 11) Importância de features
+    # 8) Importância das features
     importances = pd.Series(model.feature_importances_, index=X.columns)
     print("🌟 Feature importances:\n", importances.sort_values(ascending=False).head(10))
 
-    # 12) Salva o modelo treinado
+    # 9) Salva o modelo treinado
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
     joblib.dump(model, model_path)
     print(f"💾 Model saved to {model_path}")
