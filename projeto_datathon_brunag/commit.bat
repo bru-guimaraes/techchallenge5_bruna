@@ -1,15 +1,15 @@
 @echo off
 setlocal enabledelayedexpansion
 
-REM ————— Pré-check: Testes —————————
+REM ----- Pre-check: Testes -----
 
-echo [1/4] Atualizando pip…
+echo [1/4] Atualizando pip...
 python -m pip install --upgrade pip
 
-echo [2/4] Instalando dependências…
+echo [2/4] Instalando dependencias...
 pip install --no-cache-dir -r requirements.txt
 
-echo [3/4] Rodando suíte de testes…
+echo [3/4] Rodando suite de testes...
 python -m pytest --maxfail=1 --disable-warnings -q
 if errorlevel 1 (
   echo.
@@ -17,7 +17,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-REM ————— Commit & Push ——————————
+REM ----- Commit & Push -----
 
 set /p COMMIT_MSG=Digite a mensagem do commit: 
 
@@ -31,7 +31,7 @@ for /f "usebackq delims=" %%b in (`git rev-parse --abbrev-ref HEAD`) do (
 )
 
 echo Branch atual: %BRANCH%
-echo Fazendo stage de todas as alterações...
+echo Fazendo stage de todas as alteracoes...
 git add .
 
 echo Commitando com a mensagem:
@@ -45,9 +45,9 @@ if errorlevel 1 (
 echo Enviando para origin/%BRANCH%...
 git push origin %BRANCH%
 if errorlevel 1 (
-  echo Push falhou. Verifique se você tem permissão e conexão.
+  echo Push falhou. Verifique se voce tem permissao e conexao.
   exit /b 1
 )
 
-echo Commit e push concluídos com sucesso!
+echo Commit e push concluidos com sucesso!
 endlocal
