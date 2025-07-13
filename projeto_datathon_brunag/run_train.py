@@ -26,7 +26,7 @@ def main():
 
     # 0) Carrega configuração de hiper-parâmetros
     print("🔧 Loading hyperparameter config...")
-    with open("config.yaml", "r") as f:
+    with open("config.yaml", "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
     rf_params = cfg.get("random_forest", {})
     # Ajusta max_features 'auto' → 'sqrt'
@@ -50,7 +50,10 @@ def main():
         print(f"⚠️ Merge falhou (dados não encontrados ou vazio): {e}")
         df = None
 
-    # 3–11) Se não há dados, cria um modelo vazio e sai
+    # Colunas base para features
+    base_features = ['area_atuacao', 'nivel_ingles', 'nivel_espanhol', 'nivel_academico']
+
+    # Caso sem dados, salva modelo vazio e default features não vazias
     if df is None or df.empty:
         print("⚠️ Sem dados para treino: criando modelo vazio e saindo")
         os.makedirs(os.path.dirname(model_path), exist_ok=True)
@@ -58,11 +61,11 @@ def main():
         dummy = RandomForestClassifier(random_state=42)
         joblib.dump(dummy, model_path)
         print(f"💾 Modelo vazio salvo em {model_path}")
-        # cria também features.json vazio
+        # salva features padrão
         features_path = os.path.join(os.path.dirname(model_path), "features.json")
         with open(features_path, "w", encoding="utf-8") as f:
-            json.dump([], f)
-        print(f"✅ Features (vazio) salvo em {features_path}")
+            json.dump(base_features, f, ensure_ascii=False)
+        print(f"✅ Features padrão salvo em {features_path}")
         return
 
     # 3) Renomeia colunas aninhadas
@@ -79,12 +82,11 @@ def main():
     df['contratado'] = (df['situacao_candidado'] == 'Contratado pela Decision').astype(int)
 
     # 5) Define features e filtra NAs
-    features = ['area_atuacao', 'nivel_ingles', 'nivel_espanhol', 'nivel_academico']
-    df = df.dropna(subset=features + ['contratado'])
+    df = df.dropna(subset=base_features + ['contratado'])
 
     # 6) One-hot + salva lista de features
     print("📦 One-hot encoding and saving feature list...")
-    X = pd.get_dummies(df[features]).astype(float)
+    X = pd.get_dummies(df[base_features]).astype(float)
     y = df['contratado']
     feature_names = X.columns.tolist()
     features_path = os.path.join(os.path.dirname(model_path), "features.json")
