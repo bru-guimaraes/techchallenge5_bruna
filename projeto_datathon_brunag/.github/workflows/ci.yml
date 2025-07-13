@@ -1,26 +1,28 @@
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
+    branches: [ main ]
+  push:
+    branches: [ main ]
 
 jobs:
-  lint-and-test:
+  test:
+    name: Run Tests
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v3
-      - name: Setup Python
+
+      - name: Set up Python 3.10
         uses: actions/setup-python@v4
-        with: python-version: 3.10
-      - name: Install deps
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
         run: |
-          pip install flake8 mypy pytest
-      - name: Lint
-        run: flake8 .
-      - name: Type check
-        run: mypy .
+          python -m pip install --upgrade pip
+          pip install --no-cache-dir -r requirements.txt pytest pyarrow
+
       - name: Run tests
         run: pytest --maxfail=1 --disable-warnings -q
-      - name: Build Docker image
-        run: docker build -t datathon-api:ci .

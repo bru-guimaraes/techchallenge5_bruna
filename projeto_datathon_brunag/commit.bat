@@ -1,6 +1,24 @@
 @echo off
 setlocal enabledelayedexpansion
 
+REM ————— Pré-check: Testes —————————
+
+echo [1/5] Atualizando pip…
+python -m pip install --upgrade pip
+
+echo [2/5] Instalando pytest…
+pip install --no-cache-dir pytest
+
+echo [3/5] Rodando suíte de testes…
+python -m pytest --maxfail=1 --disable-warnings -q
+if errorlevel 1 (
+  echo.
+  echo ERRO: Testes falharam. Corrija os erros antes de commitar!
+  exit /b 1
+)
+
+REM ————— Commit & Push ——————————
+
 REM Pede a mensagem de commit
 set /p COMMIT_MSG=Digite a mensagem do commit: 
 
