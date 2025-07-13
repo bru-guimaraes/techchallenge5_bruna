@@ -23,6 +23,12 @@ jobs:
         with:
           python-version: "3.10"
 
+      - name: Prepare test environment
+        working-directory: projeto_datathon_brunag
+        run: |
+          mkdir -p model
+          echo "PATH_MODEL=$(pwd)/model/modelo_classificador.pkl" >> $GITHUB_ENV
+
       - name: Install dependencies
         working-directory: projeto_datathon_brunag
         run: |
