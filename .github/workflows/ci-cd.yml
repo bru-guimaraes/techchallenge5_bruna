@@ -26,8 +26,19 @@ jobs:
       - name: Prepare test environment
         working-directory: projeto_datathon_brunag
         run: |
+          # Cria pasta para salvar o modelo
           mkdir -p model
           echo "PATH_MODEL=$(pwd)/model/modelo_classificador.pkl" >> $GITHUB_ENV
+
+          # Cria pastas vazias para os dados parquet do treino
+          mkdir -p data/parquet/applicants
+          mkdir -p data/parquet/prospects
+          mkdir -p data/parquet/vagas
+
+          # Exporta as variáveis de ambiente usadas pelo run_train.py
+          echo "PATH_PARQUET_APPLICANTS=$(pwd)/data/parquet/applicants"  >> $GITHUB_ENV
+          echo "PATH_PARQUET_PROSPECTS=$(pwd)/data/parquet/prospects"    >> $GITHUB_ENV
+          echo "PATH_PARQUET_VAGAS=$(pwd)/data/parquet/vagas"            >> $GITHUB_ENV
 
       - name: Install dependencies
         working-directory: projeto_datathon_brunag
