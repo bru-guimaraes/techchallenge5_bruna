@@ -1,12 +1,9 @@
+# Hiperparâmetros para os modelos
 random_forest:
   n_estimators: 200
-  max_depth: 20
-  min_samples_split: 5
-  class_weight: "balanced"
-
-# Se você quiser configurar clustering também:
-kmeans:
-  n_clusters: 4
-  init: "k-means++"
-  n_init: 10
-  max_iter: 300
+  max_depth: 9
+  min_samples_split: 2
+  min_samples_leaf: 1
+  max_features: auto
+  class_weight: balanced
+  # adicione aqui mais parâmetros se quiser

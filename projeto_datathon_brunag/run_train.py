@@ -18,29 +18,29 @@ from utils.paths import (
 )
 
 def main():
-    print("Starting training script")
+    print("🚀 Starting training script")
 
     # 0) Carrega configuração de hiper-parâmetros
-    print("Loading hyperparameter config...")
+    print("🔧 Loading hyperparameter config...")
     with open("config.yaml", "r") as f:
         cfg = yaml.safe_load(f)
     rf_params = cfg.get("random_forest", {})
-    print(f"RandomForest params: {rf_params}")
+    print(f"📋 RandomForest params: {rf_params}")
 
-    # 1) Carrega Parquets
-    print("Loading parquet files...")
+    # 1) Carrega dados
+    print("📥 Loading parquet files...")
     applicants = pd.read_parquet(PATH_PARQUET_APPLICANTS)
     prospects  = pd.read_parquet(PATH_PARQUET_PROSPECTS)
     vagas      = pd.read_parquet(PATH_PARQUET_VAGAS)
-    print(f"Shapes: applicants={applicants.shape}, prospects={prospects.shape}, vagas={vagas.shape}")
+    print(f"🔢 Shapes — applicants: {applicants.shape}, prospects: {prospects.shape}, vagas: {vagas.shape}")
 
     # 2) Merge
-    print("Merging dataframes...")
+    print("🔗 Merging dataframes...")
     df = merge_dataframes(applicants, prospects, vagas)
-    print(f"Merged shape: {df.shape}")
+    print(f"➡️  Merged shape: {df.shape}")
 
     # 3) Renomeia colunas
-    print("Renaming feature columns...")
+    print("✏️ Renaming columns...")
     df.rename(columns={
         'informacoes_profissionais.area_atuacao': 'area_atuacao',
         'formacao_e_idiomas.nivel_academico':     'nivel_academico',
@@ -49,15 +49,15 @@ def main():
     }, inplace=True)
 
     # 4) Gera target
-    print("Generating target 'contratado'...")
+    print("🎯 Generating target 'contratado'...")
     df['contratado'] = (df['situacao_candidado'] == 'Contratado pela Decision').astype(int)
 
     # 5) Define features e filtra NAs
     features = ['area_atuacao', 'nivel_ingles', 'nivel_espanhol', 'nivel_academico']
     df = df.dropna(subset=features + ['contratado'])
 
-    # 6) One-hot e save features.json
-    print("Preparing X/y and saving features.json...")
+    # 6) One-hot + salva lista de features
+    print("📦 One-hot encoding and saving feature list...")
     X = pd.get_dummies(df[features]).astype(float)
     y = df['contratado']
     feature_names = X.columns.tolist()
@@ -67,34 +67,36 @@ def main():
         json.dump(feature_names, f)
     print(f"✅ Features saved to {features_path}")
 
-    # 7) Train/test split
+    # 7) Split
+    print("🔀 Train/test split...")
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.3, random_state=42, stratify=y
     )
 
     # 8) SMOTE
-    print("Applying SMOTE...")
+    print("⚖️ Applying SMOTE...")
     smote = SMOTE(random_state=42)
     X_res, y_res = smote.fit_resample(X_train, y_train)
+    print(f"✅ Resampled shape: {X_res.shape}")
 
-    # 9) Treino com parâmetros do config
-    print("Training RandomForestClassifier...")
+    # 9) Treino com RF
+    print("🛠️ Training RandomForestClassifier...")
     model = RandomForestClassifier(**rf_params, random_state=42)
     model.fit(X_res, y_res)
 
     # 10) Avaliação
-    print("Classification report:")
+    print("\n📊 Classification Report:")
     y_pred = model.predict(X_test)
     print(classification_report(y_test, y_pred))
 
-    # 11) Importâncias
+    # 11) Importância de features
     importances = pd.Series(model.feature_importances_, index=X.columns)
-    print("Feature importances:\n", importances.sort_values(ascending=False))
+    print("🌟 Feature importances:\n", importances.sort_values(ascending=False).head(10))
 
     # 12) Salva modelo
     os.makedirs(os.path.dirname(PATH_MODEL), exist_ok=True)
     joblib.dump(model, PATH_MODEL)
-    print(f"✅ Model saved to {PATH_MODEL}")
+    print(f"💾 Model saved to {PATH_MODEL}")
 
 if __name__ == "__main__":
     main()

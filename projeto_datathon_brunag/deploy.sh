@@ -48,28 +48,51 @@ ssh -i "${EC2_KEY_PATH}" -o StrictHostKeyChecking=no "${EC2_USER}@${EC2_HOST}" \
   fi
 
   # b) Docker
+  if ! command -v docker &>/dev/null; then
+    echo "🐳 Installing Docker..."
+    sudo yum update -y || sudo apt-get update -y
+    # Amazon Linux / Ubuntu support
+    if command -v amazon-linux-extras &>/dev/null; then
+      sudo amazon-linux-extras install docker -y
+    else
+      sudo apt-get install docker.io -y
+    fi
+  fi
   sudo service docker start
 
-  # c) Login ECR remoto
-  if [[ "${REGISTRY_TYPE}" == "ecr" ]]; then
+  # c) Login ECR remoto (se aplicável)
+  if [[ "\${REGISTRY_TYPE}" == "ecr" ]]; then
     echo "→ Logging into ECR..."
-    aws ecr get-login-password --region "${AWS_REGION}" \
-      | sudo docker login --username AWS --password-stdin "${IMAGE_NAME%%/*}"
+    aws ecr get-login-password --region "\${AWS_REGION}" \
+      | sudo docker login --username AWS --password-stdin "\${IMAGE_NAME%%/*}"
   fi
 
   # d) Pull & run
-  echo "⬇️ Pulling image ${IMAGE_NAME}..."
-  sudo docker pull "${IMAGE_NAME}"
+  echo "⬇️ Pulling image \${IMAGE_NAME}..."
+  sudo docker pull "\${IMAGE_NAME}"
 
-  if sudo docker ps -q -f name="${CONTAINER_NAME}" | grep -q .; then
-    sudo docker stop "${CONTAINER_NAME}"
+  # Idempotência: stop & remove container existente
+  if sudo docker ps -q -f name="\${CONTAINER_NAME}" | grep -q .; then
+    echo "🛑 Stopping existing container..."
+    sudo docker stop "\${CONTAINER_NAME}"
   fi
-  if sudo docker ps -aq -f name="${CONTAINER_NAME}" | grep -q .; then
-    sudo docker rm "${CONTAINER_NAME}"
+  if sudo docker ps -aq -f name="\${CONTAINER_NAME}" | grep -q .; then
+    echo "🗑️ Removing existing container..."
+    sudo docker rm "\${CONTAINER_NAME}"
   fi
 
-  echo "⚡ Starting container..."
-  sudo docker run -d --name "${CONTAINER_NAME}" -p "${REMOTE_PORT}:${CONTAINER_PORT}" "${IMAGE_NAME}"
+  echo "⚡ Starting container with CloudWatch Logs integration..."
+  sudo docker run -d \
+    --name "\${CONTAINER_NAME}" \
+    -p "\${REMOTE_PORT}:\${CONTAINER_PORT}" \
+    --restart unless-stopped \
+    --log-driver=awslogs \
+    --log-opt awslogs-region="\${AWS_REGION}" \
+    --log-opt awslogs-group="/datathon-api/logs" \
+    --log-opt awslogs-stream="api" \
+    "\${IMAGE_NAME}"
+
+  echo "🎉 Deploy complete on EC2!"
 EOF
 
 echo "✅ Deployment complete — http://${EC2_HOST}:${REMOTE_PORT}/"
