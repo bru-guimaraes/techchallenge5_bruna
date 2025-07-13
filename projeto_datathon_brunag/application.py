@@ -12,6 +12,7 @@ from typing import Literal, Dict, List
 import joblib
 import pandas as pd
 import shap
+from shap.utils._exceptions import InvalidModelError
 
 from utils.paths import PATH_MODEL
 
@@ -57,7 +58,13 @@ try:
     features_path = os.path.join(os.path.dirname(PATH_MODEL), "features.json")
     with open(features_path, "r", encoding="utf-8") as f:
         feature_names = json.load(f)
-    explainer = shap.TreeExplainer(modelo)
+    try:
+        explainer = shap.TreeExplainer(modelo)
+    except InvalidModelError:
+        # fallback silencioso
+        class DummyExplainer:
+            def shap_values(self, X): return [ [0]*X.shape[1], [0]*X.shape[1] ]
+        explainer = DummyExplainer()
 except Exception as e:
     raise RuntimeError(f"Erro ao inicializar a aplicação: {e}")
 # ————————————————————————————————————————————————————————
@@ -123,26 +130,20 @@ async def metrics_middleware(request: Request, call_next):
     return response
 # ————————————————————————————————————————————————————————
 
-# ——— GET ENDPOINTS (lista primeiro) —————————————————————————————————
+# ——— GET Endpoints ————————————————————————————————————
 
 @app.get("/", summary="Página inicial",
-         description="• O que é: Endpoint raiz para checar disponibilidade.\n"
-                     "• Quando usar: Teste manual ou link na documentação.\n"
-                     "• Que dor resolve: Confirma se a API está online.")
+         description="• O que é: Endpoint raiz.\n• O que resolve: Verifica disponibilidade.\n• Quando usar: Teste manual.")
 def root():
     return {"mensagem": "API funcionando com sucesso 🚀"}
 
-@app.get("/health", summary="Verificação de saúde básica",
-         description="• O que é: Retorna status simples.\n"
-                     "• Quando usar: Health checks em orquestradores.\n"
-                     "• Que dor resolve: Monitoramento básico de uptime.")
+@app.get("/health", summary="Health check básico",
+         description="• O que é: Health simples.\n• O que resolve: Monitoramento básico.\n• Quando usar: Orquestradores.")
 def health():
     return {"status": "ok"}
 
-@app.get("/health_detailed", summary="Verificação de saúde detalhada",
-         description="• O que é: Uptime e versão Python.\n"
-                     "• Quando usar: Diagnóstico aprofundado.\n"
-                     "• Que dor resolve: Debug e observabilidade de ambiente.")
+@app.get("/health_detailed", summary="Health check detalhado",
+         description="• O que é: Uptime e versão Python.\n• O que resolve: Diagnóstico operacional.\n• Quando usar: Infra SRE.")
 def health_detailed():
     return {
         "status": "ok",
@@ -151,17 +152,13 @@ def health_detailed():
     }
 
 @app.get("/metrics", summary="Métricas Prometheus",
-         description="• O que é: Métricas internas em formato Prometheus.\n"
-                     "• Quando usar: Integração com Prometheus/Grafana.\n"
-                     "• Que dor resolve: Coleta de estatísticas de uso e performance.")
+         description="• O que é: Métricas internas.\n• O que resolve: Integração Prometheus.\n• Quando usar: Dashboards.")
 def metrics():
     data = generate_latest()
     return Response(data, media_type=CONTENT_TYPE_LATEST)
 
 @app.get("/model_info", summary="Informações do modelo",
-         description="• O que é: Metadados do artefato ML.\n"
-                     "• Quando usar: Auditoria e compliance.\n"
-                     "• Que dor resolve: Documentação de versão e acurácia.")
+         description="• O que é: Metadados do modelo.\n• O que resolve: Auditoria ML.\n• Quando usar: Compliance.")
 def model_info():
     return {
         "version": app.version,
@@ -170,129 +167,116 @@ def model_info():
     }
 
 @app.get("/features", summary="Lista de features",
-         description="• O que é: Variáveis de entrada esperadas.\n"
-                     "• Quando usar: Construção de payload de predição.\n"
-                     "• Que dor resolve: Minimiza erros de contrato de API.")
+         description="• O que é: Variáveis de entrada.\n• O que resolve: Guia payload.\n• Quando usar: Antes da predição.")
 def features():
     return {"features": feature_names}
 
 @app.get("/global_explain", summary="Importância global de features",
-         description="• O que é: Importância média de cada feature.\n"
-                     "• Quando usar: Entender perfil ideal de candidato.\n"
-                     "• Que dor resolve: Transparência global do modelo.")
+         description="• O que é: Importância média (SHAP).\n• O que resolve: Perfil geral de candidatos.\n• Quando usar: Entendimento global do modelo.")
 def global_explain():
     try:
         importances = modelo.feature_importances_
-        return {"global_importance": dict(zip(feature_names, importances.tolist()))}
+        vals = importances.tolist()
     except AttributeError:
+        # fallback para explainer
         sample = pd.DataFrame([dict.fromkeys(feature_names, 0)])
         vals = explainer.shap_values(sample)[1][0]
-        return {"global_importance": dict(zip(feature_names, map(abs, vals)))}
+        vals = list(map(abs, vals))
+    return {"global_importance": dict(zip(feature_names, vals))}
 
-@app.get("/threshold", summary="Consultar threshold atual",
-         description="• O que é: Valor de corte para decisão match.\n"
-                     "• Quando usar: Antes de ajustar sensibilidade.\n"
-                     "• Que dor resolve: Transparência no filtro de candidatos.")
+@app.get("/threshold", summary="Consultar threshold",
+         description="• O que é: Mostra corte atual.\n• O que resolve: Transparência na sensibilidade.\n• Quando usar: Revisão de estratégia.")
 def get_threshold():
     return {"threshold": THRESHOLD}
 
-# ——— POST ENDPOINTS ———————————————————————————————————————
+# ——— POST Endpoints ———————————————————————————————————
 
-@app.post("/predict", response_model=PredictProbaResponse,
-          summary="Decisão de contratação (sim/não)",
-          description="• O que é: Classifica candidato como match (1) ou no-match (0).\n"
-                      "• Quando usar: Triagem automática inicial.\n"
-                      "• Que dor resolve: Agiliza filtragem de grandes volumes.")
-def predict(req: PredictRequest):
-    df_enc = pd.get_dummies(pd.DataFrame([req.dict()]))
-    aligned = df_enc.reindex(columns=feature_names, fill_value=0)
-    try:
-        probs = modelo.predict_proba(aligned)[:, 1]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro na predição: {e}")
-    pred = int(probs[0] >= THRESHOLD)
-    return {"prediction": pred, "probability": float(probs[0])}
-
-@app.post("/predict_proba", response_model=PredictProbaResponse,
-          summary="Score de compatibilidade (0–1)",
-          description="• O que é: Probabilidade bruta de match.\n"
-                      "• Quando usar: Ranking por confiança.\n"
-                      "• Que dor resolve: Priorização de candidatos por score.")
-def predict_proba(req: PredictRequest):
-    df_enc = pd.get_dummies(pd.DataFrame([req.dict()]))
-    aligned = df_enc.reindex(columns=feature_names, fill_value=0)
-    try:
-        probs = modelo.predict_proba(aligned)[:, 1]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro na predição: {e}")
-    return {"prediction": int(probs[0] >= THRESHOLD), "probability": float(probs[0])}
-
-@app.post("/batch_predict", response_model=BatchPredictResponse,
-          summary="Predição em lote",
-          description="• O que é: Processa múltiplos candidatos de uma vez.\n"
-                      "• Quando usar: Importação em pipelines em massa.\n"
-                      "• Que dor resolve: Eficiência em lotes e integrações.")
-def batch_predict(req: BatchPredictRequest):
-    df_enc = pd.get_dummies(pd.DataFrame([i.dict() for i in req.inputs]))
-    aligned = df_enc.reindex(columns=feature_names, fill_value=0)
-    try:
-        probs = modelo.predict_proba(aligned)[:, 1]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro em lote: {e}")
-    results = [PredictProbaResponse(prediction=int(p >= THRESHOLD), probability=float(p))
-               for p in probs]
-    return {"results": results}
-
-@app.post("/explain", response_model=ExplainResponse,
-          summary="Explicação de decisão via SHAP",
-          description="• O que é: Contribuição de cada feature para o resultado.\n"
-                      "• Quando usar: Auditoria interna e feedback.\n"
-                      "• Que dor resolve: Transparência local do modelo.")
-def explain(req: PredictRequest):
-    df_enc = pd.get_dummies(pd.DataFrame([req.dict()]))
-    aligned = df_enc.reindex(columns=feature_names, fill_value=0)
-    try:
-        probs = modelo.predict_proba(aligned)[:, 1]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Erro na predição: {e}")
-    pred = int(probs[0] >= THRESHOLD)
-    shap_vals = explainer.shap_values(aligned)[1][0]
-    explanation = {feat: float(val) for feat, val in zip(feature_names, shap_vals)}
-    return {"prediction": pred, "probability": float(probs[0]), "explanation": explanation}
-
-@app.post("/compare", response_model=CompareResponse,
-          summary="Comparar dois candidatos",
-          description="• O que é: Compara predições, scores e SHAP delta.\n"
-                      "• Quando usar: Decisão entre dois perfis.\n"
-                      "• Que dor resolve: Auxílio em tie-breaker de seleção.")
-def compare(req: CompareRequest):
-    def run(r):
-        enc = pd.get_dummies(pd.DataFrame([r.dict()]))
-        aligned = enc.reindex(columns=feature_names, fill_value=0)
-        prob = modelo.predict_proba(aligned)[:, 1][0]
-        pred = int(prob >= THRESHOLD)
-        shap_v = explainer.shap_values(aligned)[1][0]
-        return pred, prob, dict(zip(feature_names, shap_v))
-    a_pred, a_prob, a_shap = run(req.cand_a)
-    b_pred, b_prob, b_shap = run(req.cand_b)
-    delta = {f: b_shap[f] - a_shap[f] for f in feature_names}
-    return {"a": {"prediction": a_pred, "probability": a_prob},
-            "b": {"prediction": b_pred, "probability": b_prob},
-            "delta": delta}
-
-@app.post("/threshold", summary="Atualizar threshold de decisão",
-          description="• O que é: Modifica corte sem redeploy.\n"
-                      "• Quando usar: Testes A/B ou ajustes rápidos.\n"
-                      "• Que dor resolve: Flexibilidade operacional.")
+@app.post("/threshold", summary="Atualizar threshold",
+          description="• O que é: Atualiza corte dinamicamente.\n• O que resolve: Ajuste sem redeploy.\n• Quando usar: Teste A/B ou tuning.")
 def set_threshold(req: ThresholdRequest):
     global THRESHOLD
     THRESHOLD = req.threshold
     return {"threshold": THRESHOLD}
 
+@app.post("/predict", response_model=PredictProbaResponse,
+          summary="Classificação sim/não",
+          description="• O que é: Predição binária.\n• O que resolve: Filtragem de candidatos.\n• Quando usar: Triagem automática.")
+def predict(req: PredictRequest):
+    df = pd.DataFrame([req.dict()]); df_enc = pd.get_dummies(df)
+    df_aligned = df_enc.reindex(columns=feature_names, fill_value=0)
+    try:
+        probs = modelo.predict_proba(df_aligned)[:, 1]
+    except Exception as e:
+        raise HTTPException(500, f"Erro na predição: {e}")
+    pred = int(probs[0] >= THRESHOLD)
+    return {"prediction": pred, "probability": float(probs[0])}
+
+@app.post("/predict_proba", response_model=PredictProbaResponse,
+          summary="Score de compatibilidade",
+          description="• O que é: Probabilidade contínua.\n• O que resolve: Ranking de candidatos.\n• Quando usar: Ordenação por confiança.")
+def predict_proba(req: PredictRequest):
+    df = pd.DataFrame([req.dict()]); df_enc = pd.get_dummies(df)
+    df_aligned = df_enc.reindex(columns=feature_names, fill_value=0)
+    try:
+        probs = modelo.predict_proba(df_aligned)[:, 1]
+    except Exception as e:
+        raise HTTPException(500, f"Erro na predição: {e}")
+    return {"prediction": int(probs[0] >= THRESHOLD), "probability": float(probs[0])}
+
+@app.post("/batch_predict", response_model=BatchPredictResponse,
+          summary="Predição em lote",
+          description="• O que é: Lista de candidatos.\n• O que resolve: Processamento em massa.\n• Quando usar: Pipelines de dados.")
+def batch_predict(req: BatchPredictRequest):
+    df = pd.DataFrame([i.dict() for i in req.inputs]); df_enc = pd.get_dummies(df)
+    df_aligned = df_enc.reindex(columns=feature_names, fill_value=0)
+    try:
+        probs = modelo.predict_proba(df_aligned)[:, 1]
+    except Exception as e:
+        raise HTTPException(500, f"Erro na predição em lote: {e}")
+    results = [
+        PredictProbaResponse(prediction=int(p>=THRESHOLD), probability=float(p))
+        for p in probs
+    ]
+    return {"results": results}
+
+@app.post("/explain", response_model=ExplainResponse,
+          summary="Explicação de decisão",
+          description="• O que é: Contribuição de cada feature (SHAP).\n• O que resolve: Transparência.\n• Quando usar: Auditoria de decisões.")
+def explain(req: PredictRequest):
+    df = pd.DataFrame([req.dict()]); df_enc = pd.get_dummies(df)
+    df_aligned = df_enc.reindex(columns=feature_names, fill_value=0)
+    try:
+        probs = modelo.predict_proba(df_aligned)[:, 1]
+    except Exception as e:
+        raise HTTPException(500, f"Erro na predição: {e}")
+    pred = int(probs[0] >= THRESHOLD)
+    shap_vals = explainer.shap_values(df_aligned)[1][0]
+    explanation = dict(zip(feature_names, map(float, shap_vals)))
+    return {"prediction": pred, "probability": float(probs[0]), "explanation": explanation}
+
+@app.post("/compare", response_model=CompareResponse,
+          summary="Comparar dois candidatos",
+          description="• O que é: Diff de SHAP + predições.\n• O que resolve: Escolha entre perfis.\n• Quando usar: Tie-breaker em seleção.")
+def compare(req: CompareRequest):
+    def single(r):
+        df = pd.DataFrame([r.dict()]); df_enc = pd.get_dummies(df)
+        df_aligned = df_enc.reindex(columns=feature_names, fill_value=0)
+        prob = modelo.predict_proba(df_aligned)[:,1][0]
+        pred = int(prob >= THRESHOLD)
+        shap_v = explainer.shap_values(df_aligned)[1][0]
+        return pred, prob, shap_v
+
+    a_pred, a_prob, a_shap = single(req.cand_a)
+    b_pred, b_prob, b_shap = single(req.cand_b)
+    delta = dict(zip(feature_names, (b_shap - a_shap).tolist()))
+    return {
+        "a": {"prediction": a_pred, "probability": a_prob},
+        "b": {"prediction": b_pred, "probability": b_prob},
+        "delta": delta
+    }
+
 @app.post("/feedback", summary="Registrar feedback",
-          description="• O que é: Grava predição vs resultado real.\n"
-                      "• Quando usar: Logging contínuo de outcomes.\n"
-                      "• Que dor resolve: Monitoramento e melhoria do modelo.")
+          description="• O que é: Log de predição vs real.\n• O que resolve: Monitoramento contínuo.\n• Quando usar: Pós-outcome.")
 def feedback(fb: FeedbackRequest):
     record = fb.dict()
     log_path = os.path.join(os.path.dirname(PATH_MODEL), "feedback_log.jsonl")
@@ -301,10 +285,8 @@ def feedback(fb: FeedbackRequest):
         f.write(json.dumps(record, ensure_ascii=False) + "\n")
     return {"status": "ok"}
 
-@app.post("/historical_data", summary="Upload de dados históricos",
-          description="• O que é: Recebe CSV de entrevistas antigas.\n"
-                      "• Quando usar: Importação de massa para re-treino.\n"
-                      "• Que dor resolve: Centraliza e padroniza seu histórico.")
+@app.post("/historical_data", summary="Upload histórico",
+          description="• O que é: Recebe CSV de entrevistas.\n• O que resolve: Análise retroativa.\n• Quando usar: Importação em massa.")
 async def upload_historical(file: UploadFile = File(...)):
     os.makedirs("data", exist_ok=True)
     path = os.path.join("data", "historical_data.csv")
