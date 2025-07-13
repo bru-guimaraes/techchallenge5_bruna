@@ -10,12 +10,37 @@ env:
   IMAGE_NAME:    ${{ env.ECR_REGISTRY }}:latest
 
 jobs:
-  build-and-push:
-    name: Build & Push Docker Image
+  unit-tests:
+    name: Run Unit Tests
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        working-directory: projeto_datathon_brunag
+        run: |
+          python -m pip install --upgrade pip
+          pip install --no-cache-dir -r requirements.txt pytest pyarrow
+
+      - name: Run unit tests
+        working-directory: projeto_datathon_brunag
+        run: pytest tests/ -q
+
+  build-and-push:
+    name: Build & Push Docker Image
+    needs: unit-tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
@@ -28,6 +53,7 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build and push Docker image
+        working-directory: projeto_datathon_brunag
         uses: docker/build-push-action@v2
         with:
           context: .
@@ -41,7 +67,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
 
       - name: Set up SSH key
         uses: webfactory/ssh-agent@v0.5.4
@@ -49,9 +76,11 @@ jobs:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
       - name: Make deploy.sh executable
+        working-directory: projeto_datathon_brunag
         run: chmod +x deploy.sh
 
       - name: Deploy to EC2
+        working-directory: projeto_datathon_brunag
         env:
           IMAGE_NAME:     ${{ env.IMAGE_NAME }}
           REGISTRY_TYPE:  ecr
