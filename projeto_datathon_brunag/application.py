@@ -250,23 +250,38 @@ def set_threshold(req: ThresholdRequest):
           summary="Classificação sim/não",
           description="• Predição binária de candidato.")
 def predict(req: PredictRequest):
-    # normaliza para lowercase (aceita “Vendas” ou “vendas”)
+    # Normaliza o input
     d = {k: v.lower() for k, v in req.dict().items()}
-
+    print(">> Input recebido:", d)
     df = pd.DataFrame([d])
+    print(">> DataFrame inicial:", df.to_dict())
+
+    # One-hot encode e alinha features
     df_enc = pd.get_dummies(df)
+    print(">> DataFrame encoded:", df_enc.to_dict())
     df_aligned = df_enc.reindex(columns=feature_names, fill_value=0)
+    print(">> DataFrame alinhado:", df_aligned.to_dict())
 
     try:
         raw = modelo.predict_proba(df_aligned)
         prob = float(get_positive_proba(raw)[0])
+        prediction = int(prob >= THRESHOLD)
+        print(f">> Probabilidade: {prob}, Predição: {prediction}")
     except Exception as e:
+        print("Erro na predição:", e)
         raise HTTPException(status_code=500, detail=f"Erro na predição: {e}")
 
-    pred = int(prob >= THRESHOLD)
-    status = "aprovado" if pred == 1 else "não aprovado"
-    message = f"✅ Candidato {status} com confiança de {prob:.0%}"
-    return {"prediction": pred, "probability": prob, "message": message}
+    message = (
+        f"✅ Candidato aprovado com confiança de {int(prob*100)}%"
+        if prediction == 1
+        else f"❌ Candidato reprovado com confiança de {int((1-prob)*100)}%"
+    )
+
+    return PredictResponse(
+        prediction=prediction,
+        probability=prob,
+        message=message
+    )
 
 @app.post("/predict_proba", response_model=PredictProbaResponse,
           summary="Score de compatibilidade",

@@ -7,7 +7,7 @@ __pycache__/
 .venv/
 venv/
 env/
-.env          # real .env (variáveis sensíveis)
+.env
 
 # IDEs and editors
 .vscode/
@@ -20,12 +20,15 @@ Thumbs.db
 # Data files (gerados)
 data/raw_downloads/
 data/parquet/
+data/historical_data.csv
 
-# Models and artifacts
-model/
+# Models and artifacts - ignora tudo, exceto features.json
+model/*
+!model/features.json
+
+# (Opcional) sempre ignore arquivos binários soltos
 *.pkl
 *.joblib
-features.json   # gerado pelo run_train.py
 
 # Build / distribution
 build/
@@ -54,7 +57,7 @@ htmlcov/
 docker-compose.override.yml
 .env.*.local
 
-# Lockfiles (caso você use Pipenv ou Poetry)
+# Lockfiles (caso use Pipenv ou Poetry)
 Pipfile.lock
 poetry.lock
 

@@ -1,13 +1,11 @@
-# --------------------------------------------------
-# Builder: instala deps, testa e treina o modelo
-# --------------------------------------------------
+# → etapa de “builder” para rodar testes e gerar modelo
 FROM python:3.10-slim AS builder
 WORKDIR /app
 
-# Copia todos os fontes que o build de treino precisa
-COPY requirements.txt config.yaml run_train.py application.py utils/ model/ tests/ ./
+# 1) Cache longo: só deps que mudam pouco
+COPY requirements.txt config.yaml ./
 
-# Instala libs de sistema e Python
+# 2) Instala libs de SO + Python e deps de build/test
 RUN apt-get update \
  && apt-get install -y --no-install-recommends build-essential python3-dev libyaml-dev \
  && rm -rf /var/lib/apt/lists/* \
@@ -15,35 +13,36 @@ RUN apt-get update \
  && pip install --no-cache-dir -r requirements.txt \
  && pip install --no-cache-dir pytest imbalanced-learn ruamel.yaml shap
 
-# Garante que /app estará no PYTHONPATH para imports relativos
+# 3) Copia TODO o código do projeto
+COPY . .
+
+# 4) Ajusta PYTHONPATH para garantir que /app seja raiz de imports
 ENV PYTHONPATH=/app
 
-# Executa os testes (mas não falha o build)
-RUN pytest --maxfail=1 --disable-warnings -q || echo "⚠️ Alguns testes falharam, mas continuamos"
+# 5) Roda os testes — se algum falhar, build falha
+RUN pytest --maxfail=1 --disable-warnings -q
 
-# Roda o treino para popular model/ e features.json
+# 6) Gera o modelo + features.json (ficam em /app/model)
 RUN python run_train.py
 
-# --------------------------------------------------
-# Runtime: só o necessário para servir a API
-# --------------------------------------------------
-FROM python:3.10-slim
+
+# → etapa “runtime” mínima para rodar a API
+FROM python:3.10-slim AS runtime
 WORKDIR /app
 
-# Copia o modelo treinado e as features
-COPY --from=builder /app/model/ ./model/
-
-# Copia o código da API
-COPY application.py utils/ ./
-
-# Instala apenas o runtime
+# 7) Instala apenas deps de runtime
 COPY requirements.txt ./
-RUN apt-get update \
- && apt-get install -y --no-install-recommends libyaml-dev \
- && rm -rf /var/lib/apt/lists/* \
- && pip install --upgrade pip \
+RUN pip install --upgrade pip \
  && pip install --no-cache-dir -r requirements.txt \
  && pip install --no-cache-dir python-json-logger prometheus-client shap
 
-EXPOSE 8000
+# 8) Copia a pasta completa model (contendo model/*.pkl e features.json)
+COPY --from=builder /app/model ./model
+
+# 9) Copia a aplicação e o pacote utils
+COPY --from=builder /app/application.py ./application.py
+COPY --from=builder /app/utils ./utils
+
+# 10) Define PYTHONPATH e entrypoint
+ENV PYTHONPATH=/app
 CMD ["uvicorn", "application:app", "--host", "0.0.0.0", "--port", "8000"]
