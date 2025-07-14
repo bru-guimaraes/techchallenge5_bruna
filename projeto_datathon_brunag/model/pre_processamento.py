@@ -12,6 +12,7 @@ def gerar_dataset_treino():
     Gera dataset unificado a partir dos parquets de applicants, prospects e vagas.
     Realiza merge, seleção de colunas, gera target e salva como Parquet para treino do modelo.
     """
+
     # 1. Carrega dados brutos dos três arquivos
     applicants = pd.read_parquet(applicants_path)
     prospects  = pd.read_parquet(prospects_path)
@@ -30,15 +31,15 @@ def gerar_dataset_treino():
 
     # 4. Seleção das colunas relevantes para modelagem (ajuste conforme necessidade)
     features = [
-        'informacoes_profissionais.area_atuacao',
-        'formacao_e_idiomas.nivel_academico',
-        'formacao_e_idiomas.nivel_ingles',
-        'formacao_e_idiomas.nivel_espanhol',
-        'nivel_academico',   # da vaga
-        'nivel_ingles',      # da vaga
-        'nivel_espanhol',    # da vaga
-        'areas_atuacao',     # da vaga
-        'situacao_candidado' # status do prospect
+        'informacoes_profissionais.area_atuacao',   # área do candidato (texto separado por vírgula)
+        'formacao_e_idiomas.nivel_academico',       # nível acadêmico do candidato
+        'formacao_e_idiomas.nivel_ingles',          # nível de inglês do candidato
+        'formacao_e_idiomas.nivel_espanhol',        # nível de espanhol do candidato
+        'nivel_academico',                          # nível acadêmico exigido pela vaga
+        'nivel_ingles',                             # nível de inglês exigido pela vaga
+        'nivel_espanhol',                           # nível de espanhol exigido pela vaga
+        'areas_atuacao',                            # áreas exigidas pela vaga (texto separado por vírgula)
+        'situacao_candidado'                        # status do prospect
     ]
     df_treino = df[features].copy()
 
