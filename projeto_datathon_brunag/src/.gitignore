@@ -1,0 +1,38 @@
+# Bytecode e cache
+__pycache__/
+*.py[cod]
+
+# Logs
+*.log
+logs/
+
+# Dados gerados
+data/historical_data.csv
+data/parquet/
+
+# Artefatos de modelo
+model/*.joblib
+model/*.pkl
+
+# Ambiente virtual e env
+.env
+.venv/
+venv/
+
+# IDEs
+.vscode/
+.idea/
+
+# Sistema
+.DS_Store
+Thumbs.db
+
+# Scripts auxiliares (se não fizerem parte do core)
+*.bat
+*.ps1
+*.sh
+
+# Arquivos de build
+*.egg-info/
+dist/
+build/

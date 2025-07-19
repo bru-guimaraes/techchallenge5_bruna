@@ -1,0 +1,4 @@
+paths:
+  parquet_treino_unificado: "data/parquet/treino_unificado.parquet"
+features:
+  target_column: "y"

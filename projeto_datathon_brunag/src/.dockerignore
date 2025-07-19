@@ -1,0 +1,22 @@
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Caches e bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Não ignorar o diretório de modelo no build
+# Modelos gerados localmente
+#model/
+#model/*.tmp
+
+# Arquivos de configuração sensíveis
+.env
+.env.*
+
+# IDEs
+.vscode/
+.idea/
