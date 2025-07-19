@@ -4,7 +4,7 @@ model:
   random_forest:
     n_estimators: 10
 paths:
-  parquet_treino_unificado: C:\Users\bruna\AppData\Local\Temp\pytest-of-bruna\pytest-46\test_run_train0\data.parquet
+  parquet_treino_unificado: C:\Users\bruna\AppData\Local\Temp\pytest-of-bruna\pytest-48\test_run_train0\data.parquet
 train:
   random_state: 42
   test_size: 0.2
