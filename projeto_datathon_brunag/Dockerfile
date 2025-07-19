@@ -13,16 +13,16 @@ RUN apt-get update \
  && pip install --no-cache-dir -r requirements.txt \
  && pip install --no-cache-dir pytest imbalanced-learn ruamel.yaml shap
 
-# 3) Copia TODO o código do projeto
+# 3) Copia TODO o código do projeto (inclui utils/feature_engineering)
 COPY . .
 
-# 4) Ajusta PYTHONPATH para garantir que /app seja raiz de imports
-ENV PYTHONPATH=/app
+# 4) Ajusta PYTHONPATH para raiz e para utils, permitindo imports diretos de feature_engineering
+ENV PYTHONPATH="/app:/app/utils"
 
 # 5) Roda os testes — se algum falhar, build falha
 RUN pytest --maxfail=1 --disable-warnings -q
 
-# 6) Gera o modelo + features.json (ficam em /app/model)
+# 6) Gera o modelo + features.json (fica em /app/model)
 RUN python run_train.py
 
 
@@ -44,5 +44,5 @@ COPY --from=builder /app/application.py ./application.py
 COPY --from=builder /app/utils ./utils
 
 # 10) Define PYTHONPATH e entrypoint
-ENV PYTHONPATH=/app
+ENV PYTHONPATH="/app:/app/utils"
 CMD ["uvicorn", "application:app", "--host", "0.0.0.0", "--port", "8000"]

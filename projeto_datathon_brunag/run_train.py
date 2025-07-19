@@ -1,8 +1,10 @@
-import pandas as pd
-import joblib
+# run_train.py
+
 import os
 import json
 import yaml
+import joblib
+import pandas as pd
 
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
@@ -11,17 +13,16 @@ from imblearn.over_sampling import SMOTE
 from collections import Counter
 
 from utils.paths import PATH_MODEL as CONST_PATH_MODEL
+from utils.feature_engineering import processar_features_inference
 
 def main():
     print("🚀 Starting training script")
 
-    # Permite sobrescrever o caminho do modelo por variável de ambiente
-    model_path = os.getenv("PATH_MODEL", CONST_PATH_MODEL)
-
-    # Permite sobrescrever o parquet de treino via variável de ambiente
+    # 1) Paths (can override via env)
+    model_path   = os.getenv("PATH_MODEL", CONST_PATH_MODEL)
     parquet_path = os.getenv("PATH_TREINO_PARQUET", "data/parquet/treino_unificado.parquet")
 
-    # 0) Carrega configuração de hiperparâmetros do RandomForest
+    # 2) Load RF hyperparameters
     print("🔧 Loading hyperparameter config...")
     with open("config.yaml", "r", encoding="utf-8") as f:
         cfg = yaml.safe_load(f)
@@ -30,16 +31,15 @@ def main():
         rf_params["max_features"] = "sqrt"
     print(f"📋 RandomForest params: {rf_params}")
 
-    # 1) Carrega dataset de treino já unificado
+    # 3) Load unified parquet
     if not os.path.exists(parquet_path):
-        print(f"❌ Parquet de treino não encontrado em {parquet_path}. Execute o pré-processamento antes.")
+        print(f"❌ Parquet de treino não encontrado em {parquet_path}. Abort.")
         return
-
     df = pd.read_parquet(parquet_path)
-    print(f"🔢 Shape do dataset unificado: {df.shape}")
+    print(f"🔢 Dataset shape: {df.shape}")
 
-    # Colunas base para features (ajuste conforme evolução do projeto)
-    base_features = [
+    # 4) Define base features + drop nulls
+    base_feats = [
         'informacoes_profissionais.area_atuacao',
         'formacao_e_idiomas.nivel_academico',
         'formacao_e_idiomas.nivel_ingles',
@@ -49,13 +49,11 @@ def main():
         'nivel_espanhol',
         'areas_atuacao'
     ]
+    df = df.dropna(subset=base_feats + ['contratado'])
 
-    # 2) Remove linhas com valores nulos em qualquer feature essencial ou target
-    df = df.dropna(subset=base_features + ['contratado'])
-
-    # 3) One-hot encoding e salva lista de features
+    # 5) One‐hot encode & save feature list
     print("📦 One-hot encoding and saving feature list...")
-    X = pd.get_dummies(df[base_features]).astype(float)
+    X = pd.get_dummies(df[base_feats]).astype(float)
     y = df['contratado']
     feature_names = X.columns.tolist()
     features_path = os.path.join(os.path.dirname(model_path), "features.json")
@@ -64,37 +62,33 @@ def main():
         json.dump(feature_names, f, ensure_ascii=False)
     print(f"✅ Features saved to {features_path}")
 
-    # 4) Train/test split
+    # 6) Train/test split
     print("🔀 Train/test split...")
     X_train, X_test, y_train, y_test = train_test_split(
         X, y, test_size=0.3, random_state=42, stratify=y
     )
 
-    # 5) SMOTE para balancear as classes
+    # 7) SMOTE
     print("⚖️ Applying SMOTE...")
     try:
-        smote = SMOTE(random_state=42)
-        X_train_res, y_train_res = smote.fit_resample(X_train, y_train)
+        sm = SMOTE(random_state=42)
+        X_train_res, y_train_res = sm.fit_resample(X_train, y_train)
         print(f"✅ SMOTE applied: {Counter(y_train_res)}")
     except ValueError as e:
-        print(f"⚠️ SMOTE skipped (single class): {e}")
+        print(f"⚠️ SMOTE skipped: {e}")
         X_train_res, y_train_res = X_train, y_train
 
-    # 6) Treina o RandomForest
+    # 8) Train RF
     print("🛠️ Training RandomForestClassifier...")
     model = RandomForestClassifier(**rf_params, random_state=42)
     model.fit(X_train_res, y_train_res)
 
-    # 7) Avaliação no conjunto de teste
+    # 9) Evaluate
     print("\n📊 Classification Report:")
     y_pred = model.predict(X_test)
     print(classification_report(y_test, y_pred))
 
-    # 8) Importância das features
-    importances = pd.Series(model.feature_importances_, index=X.columns)
-    print("🌟 Feature importances:\n", importances.sort_values(ascending=False).head(10))
-
-    # 9) Salva o modelo treinado
+    # 10) Save model
     os.makedirs(os.path.dirname(model_path), exist_ok=True)
     joblib.dump(model, model_path)
     print(f"💾 Model saved to {model_path}")

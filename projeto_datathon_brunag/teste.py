@@ -1,17 +1,11 @@
 import pandas as pd
 
-parquet_paths = [
-    "data/parquet/applicants/applicants.parquet",
-    "data/parquet/prospects/prospects.parquet",
-    "data/parquet/vagas/vagas.parquet"
-]
+# Carrega arquivos individualmente
+df_app = pd.read_parquet("data/parquet/applicants/applicants.parquet")
+df_pro = pd.read_parquet("data/parquet/prospects/prospects.parquet")
 
+print("Shape applicants:", df_app.shape)
+print("Shape prospects:", df_pro.shape)
 
-for path in parquet_paths:
-    print(f"\n==== {path} ====")
-    try:
-        df = pd.read_parquet(path)
-        print("Colunas:", list(df.columns))
-        print(df.head(2))
-    except Exception as e:
-        print(f"Erro ao ler {path}: {e}")
+print("\nColunas applicants:", df_app.columns.tolist())
+print("Colunas prospects:", df_pro.columns.tolist())

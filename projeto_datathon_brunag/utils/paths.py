@@ -2,7 +2,7 @@ import os, json
 
 from pathlib import Path
 
-PATH_MODEL = os.getenv("PATH_MODEL", "/app/model/modelo_classificador.pkl")
+PATH_MODEL = os.getenv("PATH_MODEL") or "model/modelo_classificador.joblib"
 
 def load_feature_names():
     f = Path(PATH_MODEL).parent / "features.json"

@@ -24,6 +24,18 @@ def carregar_dados_para_treino(
         right_on='codigo_profissional'
     )
 
+    # Renomeia colunas aninhadas para nomes planos esperados pelo modelo
+    renomear = {
+        "informacoes_pessoais.sexo": "sexo",
+        "informacoes_pessoais.estado_civil": "estado_civil",
+        "formacao_e_idiomas.nivel_academico": "nivel_academico",
+        "informacoes_profissionais.area_atuacao": "area_atuacao",
+        "informacoes_profissionais.remuneracao": "remuneracao",
+        "formacao_e_idiomas.nivel_ingles": "nivel_ingles",
+        "formacao_e_idiomas.nivel_espanhol": "nivel_espanhol",
+    }
+    df_final = df_final.rename(columns=renomear)
+
     # Seleciona as colunas úteis para o modelo
     colunas_uteis = [
         'codigo_profissional',
