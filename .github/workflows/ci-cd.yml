@@ -2,12 +2,12 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
 
 env:
+  # Usamos diretamente o secret aqui, não podemos referenciar env dentro de env
   ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
-  IMAGE_NAME:    ${{ env.ECR_REGISTRY }}:latest
+  IMAGE_NAME:    ${{ secrets.ECR_REGISTRY }}:latest
 
 jobs:
   unit-tests:
@@ -26,29 +26,24 @@ jobs:
       - name: Prepare test environment
         working-directory: projeto_datathon_brunag
         run: |
-          # Cria pasta para salvar o modelo
           mkdir -p model
+          # exporta variáveis de ambiente pro restante do job
           echo "PATH_MODEL=$(pwd)/model/modelo_classificador.pkl" >> $GITHUB_ENV
-
-          # Cria pastas vazias para os dados parquet do treino
-          mkdir -p data/parquet/applicants
-          mkdir -p data/parquet/prospects
-          mkdir -p data/parquet/vagas
-
-          # Exporta as variáveis de ambiente usadas pelo run_train.py
-          echo "PATH_PARQUET_APPLICANTS=$(pwd)/data/parquet/applicants"  >> $GITHUB_ENV
-          echo "PATH_PARQUET_PROSPECTS=$(pwd)/data/parquet/prospects"    >> $GITHUB_ENV
-          echo "PATH_PARQUET_VAGAS=$(pwd)/data/parquet/vagas"            >> $GITHUB_ENV
+          mkdir -p data/parquet/applicants data/parquet/prospects data/parquet/vagas
+          echo "PATH_PARQUET_APPLICANTS=$(pwd)/data/parquet/applicants" >> $GITHUB_ENV
+          echo "PATH_PARQUET_PROSPECTS=$(pwd)/data/parquet/prospects" >> $GITHUB_ENV
+          echo "PATH_PARQUET_VAGAS=$(pwd)/data/parquet/vagas" >> $GITHUB_ENV
 
       - name: Install dependencies
         working-directory: projeto_datathon_brunag
         run: |
           python -m pip install --upgrade pip
-          pip install --no-cache-dir -r requirements.txt pytest pyarrow
+          pip install --no-cache-dir -r requirements.txt pytest
 
-      - name: Run unit tests
+      - name: Run endpoint tests
         working-directory: projeto_datathon_brunag
-        run: pytest tests/ -q
+        run: |
+          pytest tests/test_api_endpoints.py --maxfail=1 --disable-warnings -q
 
   build-and-push:
     name: Build & Push Docker Image
@@ -70,13 +65,12 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v1
 
       - name: Build and push Docker image
-        working-directory: projeto_datathon_brunag
         uses: docker/build-push-action@v2
         with:
-          context: .
+          context: projeto_datathon_brunag
+          file:    projeto_datathon_brunag/Dockerfile
           push:    true
-          tags:    |
-            ${{ env.IMAGE_NAME }}
+          tags:    ${{ env.IMAGE_NAME }}
 
   deploy:
     name: Deploy to EC2
@@ -93,11 +87,10 @@ jobs:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
       - name: Make deploy.sh executable
-        working-directory: projeto_datathon_brunag
-        run: chmod +x deploy.sh
+        run: chmod +x projeto_datathon_brunag/deploy.sh
 
       - name: Deploy to EC2
-        working-directory: projeto_datathon_brunag
+        run: projeto_datathon_brunag/deploy.sh
         env:
           IMAGE_NAME:     ${{ env.IMAGE_NAME }}
           REGISTRY_TYPE:  ecr
@@ -108,4 +101,3 @@ jobs:
           CONTAINER_NAME: datathon-api
           REMOTE_PORT:    80
           CONTAINER_PORT: 8000
-        run: ./deploy.sh

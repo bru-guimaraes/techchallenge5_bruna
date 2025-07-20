@@ -4,12 +4,11 @@ import zipfile
 import pandas as pd
 from pathlib import Path
 
-# Diretórios, monkeypatched nos testes
-RAW_DIR = Path(os.getenv("RAW_DIR", "raw_data"))
-PARQUET_DIR = Path(os.getenv("PARQUET_DIR", "data_parquet"))
+# ← Ajuste para onde os seus ZIPs realmente estão:
+RAW_DIR = Path(os.getenv("RAW_DIR", "data/raw_downloads"))
+PARQUET_DIR = Path(os.getenv("PARQUET_DIR", "data/parquet"))
 
 def extrair_e_converter():
-    """Extrai JSONs de cada .zip em RAW_DIR e gera um único Parquet por zip."""
     RAW_DIR.mkdir(parents=True, exist_ok=True)
     PARQUET_DIR.mkdir(parents=True, exist_ok=True)
 
@@ -18,7 +17,6 @@ def extrair_e_converter():
         out_dir = PARQUET_DIR / name
         out_dir.mkdir(parents=True, exist_ok=True)
 
-        # Carrega e funde todos os dicionários JSON em um só
         merged = {}
         with zipfile.ZipFile(zip_path, "r") as zf:
             for member in zf.namelist():
@@ -28,9 +26,23 @@ def extrair_e_converter():
                     data = json.load(f)
                     merged.update(data)
 
-        # Converte para DataFrame de uma única linha
-        df = pd.DataFrame([merged])
+        # caso “mapa de id → registro”
+        if all(
+            isinstance(v, dict) and not any(isinstance(val, list) for val in v.values())
+            for v in merged.values()
+        ):
+            df = pd.json_normalize(list(merged.values()))
+            df[f"{name[:-1]}_id"] = list(merged.keys())
+        else:
+            # caso prospects com lista interna
+            outer_id, content = next(iter(merged.items()))
+            list_key, lst = next((k, v) for k, v in content.items() if isinstance(v, list))
+            df = pd.json_normalize(lst)
+            df[f"{name[:-1]}_id"] = outer_id
 
-        # Grava como Parquet
         pq_file = out_dir / f"{name}.parquet"
-        df.to_parquet(pq_file)
+        df.to_parquet(pq_file, index=False)
+        print(f"[Extractor] {pq_file} gerado.")
+
+if __name__ == "__main__":
+    extrair_e_converter()

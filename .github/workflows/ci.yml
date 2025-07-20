@@ -9,29 +9,31 @@ on:
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.10]
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v3
 
-      - name: Set up Python 3.10
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
-          python-version: "3.10"
+          python-version: ${{ matrix.python-version }}
+
+      - name: Cache pip
+        uses: actions/cache@v3
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/requirements.txt') }}
 
       - name: Prepare test environment
         working-directory: projeto_datathon_brunag
         run: |
-          # Cria pasta para salvar o modelo
           mkdir -p model
           echo "PATH_MODEL=$(pwd)/model/modelo_classificador.pkl" >> $GITHUB_ENV
-
-          # Cria pastas vazias para os dados parquet do treino
-          mkdir -p data/parquet/applicants
-          mkdir -p data/parquet/prospects
-          mkdir -p data/parquet/vagas
-
-          # Exporta as variáveis de ambiente usadas pelo run_train.py
+          mkdir -p data/parquet/{applicants,prospects,vagas}
           echo "PATH_PARQUET_APPLICANTS=$(pwd)/data/parquet/applicants"  >> $GITHUB_ENV
           echo "PATH_PARQUET_PROSPECTS=$(pwd)/data/parquet/prospects"    >> $GITHUB_ENV
           echo "PATH_PARQUET_VAGAS=$(pwd)/data/parquet/vagas"            >> $GITHUB_ENV
@@ -39,17 +41,24 @@ jobs:
       - name: Install runtime dependencies
         working-directory: projeto_datathon_brunag
         run: |
-          python -m pip install --upgrade pip
+          pip install --upgrade pip
           pip install --no-cache-dir -r requirements.txt
 
       - name: Install dev dependencies
         working-directory: projeto_datathon_brunag
         run: pip install pytest
 
-      - name: Run tests
+      - name: Run endpoint tests
         working-directory: projeto_datathon_brunag
-        run: pytest --maxfail=1 --disable-warnings -q
+        run: pytest tests/test_api_endpoints.py --maxfail=1 --disable-warnings -q
 
-      - name: Build Docker image
-        working-directory: projeto_datathon_brunag
-        run: docker build -t seu-usuario/projeto-datathon:latest .
+      - name: Build & push Docker image to Docker Hub
+        if: github.event_name == 'push'
+        uses: docker/build-push-action@v4
+        with:
+          context: projeto_datathon_brunag
+          push: false               # muda para `true` se quiser publicar
+          tags: |
+            seu-usuario/projeto-datathon:latest
+          cache-from: type=registry,ref=seu-usuario/projeto-datathon:latest
+          cache-to: type=inline

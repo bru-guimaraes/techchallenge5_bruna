@@ -1,56 +1,52 @@
-# src/tests/test_run_train.py
-
 import os
 import json
 import joblib
 import pytest
-import yaml                              # <-- adicionado
-from run_train import main as run_main
-from utils.paths import PATH_MODEL
+import yaml
+import pandas as pd
+from pathlib import Path
+
+from run_train import main
 
 def test_run_train(tmp_path, monkeypatch):
-    # prepara paths fake
-    fake_model = tmp_path / "mymodel.joblib"
+    # fake PATH_MODEL
+    fake_model    = tmp_path / "mymodel.joblib"
     fake_features = tmp_path / "features.json"
-
-    # monkeypatcha o diretorio do modelo
     monkeypatch.setenv("PATH_MODEL", str(fake_model))
 
-    # cria config completo para testes
+    # 1) cria parquet unificado mínimo (agora com 2 linhas!)
+    df = pd.DataFrame([
+        {"a": 1, "y": 0},
+        {"a": 2, "y": 1}
+    ])
+    uni = tmp_path / "unificado.parquet"
+    df.to_parquet(uni)
+
+    # 2) escreve config.yaml (adiciona train/test_size)
     cfg = {
         "paths": {
-            "parquet_treino_unificado": str(tmp_path / "data.parquet")
+            "parquet_treino_unificado": str(uni),
+            "candidatos_parquet_dir": "",
+            "prospects_parquet_dir": "",
+            "vagas_parquet_dir": ""
         },
-        "features": {
-            "target_column": "y"
-        },
-        "train": {
-            "test_size": 0.2,
-            "random_state": 42
-        },
-        "model": {
-            "random_forest": {
-                "n_estimators": 10
-            }
-        }
+        "features": {"target_column": "y"},
+        "model": {"random_forest": {"n_estimators": 5, "random_state": 0}},
+        "train": {"test_size": 0.5, "random_state": 0}
     }
-    with open("config.yaml", "w", encoding="utf-8") as f:
-        yaml.dump(cfg, f)
+    Path("config.yaml").write_text(yaml.dump(cfg), encoding="utf-8")
 
-    # cria parquet vazio com apenas a coluna target
-    import pandas as pd
-    pd.DataFrame({"y": []}).to_parquet(cfg["paths"]["parquet_treino_unificado"])
+    # 3) roda treino
+    main()
 
-    # executa o pipeline
-    run_main()
+    # 4) checa artefatos
+    assert fake_model.exists(),   "Modelo não foi gerado"
+    assert fake_features.exists(), "features.json não foi gerado"
 
-    # checa se arquivo do modelo e features.json existem
-    assert fake_model.exists()
-    assert fake_features.exists()
-
-    # carrega e garante predict_proba existe
+    # 5) interface do modelo
     m = joblib.load(fake_model)
     assert hasattr(m, "predict_proba")
 
-    feats = json.loads(fake_features.read_text())
+    feats = json.loads(fake_features.read_text(encoding="utf-8"))
     assert isinstance(feats, list)
+    assert "a" in feats
