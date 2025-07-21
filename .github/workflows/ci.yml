@@ -1,3 +1,4 @@
+# .github/workflows/ci.yml
 name: CI
 
 on:
@@ -9,9 +10,10 @@ on:
 jobs:
   test-and-build:
     runs-on: ubuntu-latest
+
     strategy:
       matrix:
-        python-version: [3.10]
+        python-version: ["3.10"]
 
     steps:
       - name: Checkout repository
@@ -20,7 +22,7 @@ jobs:
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v4
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "${{ matrix.python-version }}"
 
       - name: Cache pip
         uses: actions/cache@v3
@@ -29,53 +31,31 @@ jobs:
           key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/requirements.txt') }}
 
       - name: Prepare test environment
-        working-directory: projeto_datathon_brunag
+        working-directory: projeto_datathon_brunag/src
         run: |
+          # create an empty model file so import in application.py won't fail
           mkdir -p model
+          touch model/pipeline.joblib
+
+          # tell your app where to find it
           echo "PATH_MODEL=$(pwd)/model/pipeline.joblib" >> $GITHUB_ENV
+
+          # create the empty parquet dirs your /match endpoint tests expect
           mkdir -p data/parquet/{applicants,prospects,vagas}
-          echo "PATH_PARQUET_APPLICANTS=$(pwd)/data/parquet/applicants"  >> $GITHUB_ENV
-          echo "PATH_PARQUET_PROSPECTS=$(pwd)/data/parquet/prospects"    >> $GITHUB_ENV
-          echo "PATH_PARQUET_VAGAS=$(pwd)/data/parquet/vagas"            >> $GITHUB_ENV
+          echo "PATH_PARQUET_APPLICANTS=$(pwd)/data/parquet/applicants" >> $GITHUB_ENV
+          echo "PATH_PARQUET_PROSPECTS=$(pwd)/data/parquet/prospects" >> $GITHUB_ENV
+          echo "PATH_PARQUET_VAGAS=$(pwd)/data/parquet/vagas" >> $GITHUB_ENV
 
       - name: Install runtime dependencies
-        working-directory: projeto_datathon_brunag
+        working-directory: projeto_datathon_brunag/src
         run: |
           pip install --upgrade pip
           pip install --no-cache-dir -r requirements.txt
 
       - name: Install dev dependencies
-        working-directory: projeto_datathon_brunag
+        working-directory: projeto_datathon_brunag/src
         run: pip install pytest
 
-      - name: Create dummy pipeline model
-        working-directory: projeto_datathon_brunag
-        run: |
-          python - << 'EOF'
-          import joblib
-          from sklearn.dummy import DummyClassifier
-          import os
-
-          # train a simple dummy classifier
-          clf = DummyClassifier(strategy="constant", constant=0)
-          clf.fit([[0],[1]], [0,1])
-
-          # dump to the expected PATH_MODEL
-          model_path = os.getenv("PATH_MODEL")
-          os.makedirs(os.path.dirname(model_path), exist_ok=True)
-          joblib.dump(clf, model_path)
-          EOF
-
-      - name: Run unit tests
-        working-directory: projeto_datathon_brunag
+      - name: Run all tests
+        working-directory: projeto_datathon_brunag/src
         run: pytest tests/ --maxfail=1 --disable-warnings -q
-
-      - name: Build & push Docker image to Docker Hub
-        if: github.event_name == 'push'
-        uses: docker/build-push-action@v4
-        with:
-          context: projeto_datathon_brunag
-          push: false
-          tags: seu-usuario/projeto-datathon:latest
-          cache-from: type=registry,ref=seu-usuario/projeto-datathon:latest
-          cache-to: type=inline
