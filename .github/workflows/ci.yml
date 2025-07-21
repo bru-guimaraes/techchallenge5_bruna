@@ -52,15 +52,19 @@ jobs:
         working-directory: projeto_datathon_brunag
         run: |
           python - << 'EOF'
-import joblib
-from sklearn.dummy import DummyClassifier
-clf = DummyClassifier(strategy="constant", constant=0)
-clf.fit([[0],[1]], [0,1])
-import os
-model_path = os.getenv("PATH_MODEL")
-os.makedirs(os.path.dirname(model_path), exist_ok=True)
-joblib.dump(clf, model_path)
-EOF
+          import joblib
+          from sklearn.dummy import DummyClassifier
+          import os
+
+          # train a simple dummy classifier
+          clf = DummyClassifier(strategy="constant", constant=0)
+          clf.fit([[0],[1]], [0,1])
+
+          # dump to the expected PATH_MODEL
+          model_path = os.getenv("PATH_MODEL")
+          os.makedirs(os.path.dirname(model_path), exist_ok=True)
+          joblib.dump(clf, model_path)
+          EOF
 
       - name: Run unit tests
         working-directory: projeto_datathon_brunag
