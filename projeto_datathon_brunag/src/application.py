@@ -31,9 +31,10 @@ class PredictRequest(BaseModel):
     )
 
 class PredictResponseItem(BaseModel):
+    mensagem:  str   = Field(..., description="Mensagem humanizada de resultado")
     status:    str   = Field(..., description="‘aprovado’ ou ‘reprovado’")
-    score:     float = Field(..., description="Probabilidade bruta (0–1)")
-    threshold: float = Field(..., description="Valor de corte usado")
+    nota:      float = Field(..., description="Probabilidade do candidato ser aprovado (0–1)")
+    corte:     float = Field(..., description="Valor de corte utilizado para aprovação")
 
 class PredictResponse(BaseModel):
     results: List[PredictResponseItem]
@@ -50,13 +51,36 @@ try:
 except Exception as e:
     raise RuntimeError(f"Não foi possível carregar o modelo: {e}")
 
+threshold = float(os.getenv("PREDICTION_THRESHOLD", 0.5))
+THRESHOLD = threshold
+feature_names = expected_cols
 
 # ---------------------------
-# 3) FastAPI
+# 3) FastAPI (com descrição detalhada)
 # ---------------------------
 
-app = FastAPI(title="API de Previsão de Contratação")
+app = FastAPI(
+    title="API de Previsão de Contratação",
+    description="""
+Esta API permite automatizar a análise e triagem de candidatos para vagas de emprego.
+Receba rapidamente uma recomendação (“aprovado” ou “reprovado”) baseada em machine learning, considerando a aderência entre o perfil do candidato e os requisitos da vaga.
 
+Quando usar:
+- Para acelerar o processo de seleção de pessoas
+- Para priorizar candidatos com maior potencial de contratação
+- Para reduzir o tempo gasto com triagem manual
+
+Principais benefícios:
+- Agilidade e padronização na análise de candidatos
+- Mais assertividade e transparência para o RH
+- Transparência na nota, corte e motivo de aprovação/reprovação
+"""
+)
+
+@app.get("/")
+def root():
+    return {"status": "ok", "msg": "API de Previsão de Contratação ativa!"}
+    
 @app.get("/health")
 def health():
     return {"status": "ok"}
@@ -76,7 +100,6 @@ def predict(req: PredictRequest):
     # 2) Preencher colunas faltantes com valor neutro
     for col in expected_cols:
         if col not in df.columns:
-            # se for booleano, poderia inferir tipo, mas vamos usar 0/False
             df[col] = 0
 
     # 3) Cortar colunas extras e reordenar
@@ -91,15 +114,28 @@ def predict(req: PredictRequest):
     # 5) Define threshold
     threshold = float(os.getenv("PREDICTION_THRESHOLD", 0.5))
 
-    # 6) Monta resposta
+    # 6) Monta resposta amigável e detalhada
     results = []
     for p in probs:
         status = "aprovado" if p >= threshold else "reprovado"
+        nota = round(float(p), 4)
+        corte = threshold
+        if status == "aprovado":
+            mensagem = (
+                f"Parabéns! O candidato foi aprovado para esta vaga. "
+                f"Nota do candidato: {nota} | Nota de corte: {corte}."
+            )
+        else:
+            mensagem = (
+                f"O candidato foi reprovado para esta vaga. "
+                f"Nota do candidato: {nota} | Nota de corte: {corte}."
+            )
         results.append(
             PredictResponseItem(
+                mensagem=mensagem,
                 status=status,
-                score=round(float(p), 4),
-                threshold=threshold
+                nota=nota,
+                corte=corte
             )
         )
 

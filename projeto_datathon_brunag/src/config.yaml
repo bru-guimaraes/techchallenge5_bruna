@@ -1,10 +1,8 @@
-# config.yaml
-
 paths:
-  parquet_treino_unificado: "src/data/parquet/parquet_treino_unificado.parquet"
-  candidatos_parquet_dir: "src/data/parquet/applicants"
-  prospects_parquet_dir:  "src/data/parquet/prospects"
-  vagas_parquet_dir:      "src/data/parquet/vagas"
+  parquet_treino_unificado: data/parquet/parquet_treino_unificado.parquet
+  candidatos_parquet_dir: data/parquet/applicants
+  prospects_parquet_dir: data/parquet/prospects
+  vagas_parquet_dir: data/parquet/vagas
 
 features:
   target_column: "y"

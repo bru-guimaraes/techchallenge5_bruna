@@ -39,3 +39,6 @@ def load_feature_names(path: str | None = None) -> list[str]:
     p = path or get_features_json_path()
     with open(p, "r", encoding="utf-8") as f:
         return json.load(f)
+
+# Alias para uso direto em testes
+PATH_MODEL = get_pipeline_path()
