@@ -1,3 +1,4 @@
+# .github/workflows/ci.yml
 name: CI
 
 on:
@@ -32,7 +33,6 @@ jobs:
         working-directory: projeto_datathon_brunag
         run: |
           mkdir -p model
-          # Ajuste para o nome correto do seu modelo:
           echo "PATH_MODEL=$(pwd)/model/pipeline.joblib" >> $GITHUB_ENV
           mkdir -p data/parquet/{applicants,prospects,vagas}
           echo "PATH_PARQUET_APPLICANTS=$(pwd)/data/parquet/applicants"  >> $GITHUB_ENV
@@ -49,7 +49,6 @@ jobs:
         working-directory: projeto_datathon_brunag
         run: pytest tests/ --maxfail=1 --disable-warnings -q
 
-      # Opcional: Lint
       - name: Lint with flake8
         working-directory: projeto_datathon_brunag
         run: |
@@ -58,11 +57,12 @@ jobs:
 
       - name: Build Docker image
         if: github.event_name == 'push'
-        working-directory: projeto_datathon_brunag
         uses: docker/build-push-action@v4
         with:
-          context: .
-          push: false
-          tags: seu-usuario/projeto-datathon:latest
+          # aponta para a pasta raiz da sua app
+          context: projeto_datathon_brunag
+          file:    projeto_datathon_brunag/Dockerfile
+          push:    false
+          tags:    seu-usuario/projeto-datathon:latest
           cache-from: type=registry,ref=seu-usuario/projeto-datathon:latest
-          cache-to: type=inline
+          cache-to:   type=inline
