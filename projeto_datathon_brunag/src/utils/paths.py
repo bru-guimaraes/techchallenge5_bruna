@@ -1,23 +1,41 @@
+# src/utils/paths.py
+
 import os
-import json
 from pathlib import Path
+import json
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# Caminho padrão do modelo salvo
-DEFAULT_MODEL_PATH = str(BASE_DIR / "model" / "modelo_classificador.joblib")
-PATH_MODEL = DEFAULT_MODEL_PATH
+def get_features_json_path() -> str:
+    """
+    Caminho para o features.json gerado pelo pipeline.
+    Usa a variável de ambiente FEATURES_JSON_PATH, se definida,
+    ou o arquivo padrão em model/features.json.
+    """
+    return os.environ.get(
+        "FEATURES_JSON_PATH",
+        str(BASE_DIR / "model" / "features.json")
+    )
 
+def get_pipeline_path() -> str:
+    """
+    Caminho para o pipeline.joblib gerado pelo treinamento.
+    Usa a variável de ambiente PIPELINE_PATH, se definida,
+    ou o arquivo padrão em model/pipeline.joblib.
+    """
+    return os.environ.get(
+        "PIPELINE_PATH",
+        str(BASE_DIR / "model" / "pipeline.joblib")
+    )
+
+# Alias para compatibilidade
 def get_model_path() -> str:
-    """
-    Retorna o caminho real do modelo, dando preferência à variável de ambiente PATH_MODEL se estiver definida.
-    """
-    return os.getenv("PATH_MODEL") or DEFAULT_MODEL_PATH
+    return get_pipeline_path()
 
-def load_feature_names() -> list:
+def load_feature_names(path: str | None = None) -> list[str]:
     """
-    Carrega a lista de features de features.json usando o mesmo diretório do modelo.
+    Carrega a lista de features salvas em JSON.
     """
-    model_path = get_model_path()
-    feat_file = Path(model_path).parent / "features.json"
-    return json.loads(feat_file.read_text(encoding="utf-8"))
+    p = path or get_features_json_path()
+    with open(p, "r", encoding="utf-8") as f:
+        return json.load(f)

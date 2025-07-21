@@ -1,54 +1,28 @@
+import os
 import joblib
 import pandas as pd
-from pathlib import Path
+import json
 
-from utils.paths import get_model_path, load_feature_names
+# Diretório onde pipeline.joblib e features.json estão gerados
+BASE_DIR = os.getenv("PATH_MODEL", "model")
+PIPELINE_PATH = os.path.join(BASE_DIR, "pipeline.joblib")
+FEATURES_PATH = os.path.join(BASE_DIR, "features.json")
 
-# lista de features (vai apontar para o features.json correto)
-_FEATURES = load_feature_names()
-_MLB = None
+# Carrega pipeline e lista de features
+pipeline = joblib.load(PIPELINE_PATH)
+with open(FEATURES_PATH, encoding="utf-8") as f:
+    FEATURE_NAMES = json.load(f)
 
-def _load_mlb():
+def predict_from_pipeline(df: pd.DataFrame) -> pd.Series:
     """
-    Carrega (ou recarrega) o MultiLabelBinarizer
-    a partir do mesmo diretório do modelo.
-    Usa VAR de ambiente PATH_MODEL automaticamente.
+    Recebe um DataFrame já com as colunas esperadas,
+    aplica o pipeline e retorna uma Series com as previsões.
     """
-    global _MLB
-    if _MLB is None:
-        mlb_path = Path(get_model_path()).parent / "area_atuacao_mlb.joblib"
-        _MLB = joblib.load(str(mlb_path))
-    return _MLB
-
-def _get_model():
-    """
-    Carrega (ou recarrega) o modelo do disco,
-    usando VAR de ambiente PATH_MODEL.
-    """
-    return joblib.load(get_model_path())
-
-def preprocessar_requisicao(dados: dict) -> pd.DataFrame:
-    """
-    Converte dict de entrada em DataFrame pronto para predição.
-    """
-    df = pd.DataFrame([dados])
-
-    # 1) split + strip
-    df["area_atuacao"] = (
-        df["area_atuacao"]
-        .str.split(",")
-        .apply(lambda lst: [s.strip() for s in lst])
-    )
-
-    # 2) one‑hot multilabel
-    mlb = _load_mlb()
-    arr = mlb.transform(df["area_atuacao"])
-    df_area = pd.DataFrame(arr, columns=mlb.classes_)
-
-    # 3) concat + dummies dos outros campos
-    df_rest = df.drop(columns=["area_atuacao"])
-    df1 = pd.concat([df_rest.reset_index(drop=True), df_area], axis=1)
-    df_cod = pd.get_dummies(df1)
-
-    # 4) alinha com as features esperadas
-    return df_cod.reindex(columns=_FEATURES, fill_value=0)
+    # verifica se não faltam colunas
+    missing = set(FEATURE_NAMES) - set(df.columns)
+    if missing:
+        raise KeyError(f"columns are missing: {missing}")
+    # seleciona só as colunas que o pipeline espera
+    X = df[FEATURE_NAMES]
+    # retorna Série de ints (0/1)
+    return pd.Series(pipeline.predict(X))

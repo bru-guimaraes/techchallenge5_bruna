@@ -3,12 +3,14 @@ import sys
 import joblib
 import yaml
 import pandas as pd
+import json
 from pathlib import Path
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import OneHotEncoder
 from utils.carregar_dados_para_treino import carregar_dados_para_treino
+
 
 def main():
     # 1) Carrega configurações
@@ -29,13 +31,18 @@ def main():
     X = df.drop(columns=[target_col])
     y = df[target_col]
 
-    # 3) Todas as colunas object são categóricas
+    # 3) Identifica colunas categóricas e numéricas
     cat_cols = X.select_dtypes(include="object").columns.tolist()
+    # o resto (bool, int, float) ficará em remainder
 
     # 4) Pipeline: OneHot em todas as categóricas + RandomForest
     ct = ColumnTransformer([
-        ("ohe", OneHotEncoder(handle_unknown="ignore", sparse=False), cat_cols),
-    ], remainder="passthrough")  # boolean passa "as is"
+        (
+            "ohe",
+            OneHotEncoder(handle_unknown="ignore", sparse_output=False),
+            cat_cols
+        ),
+    ], remainder="passthrough")  # mantém booleans e numéricas
 
     pipeline = Pipeline([
         ("preproc", ct),
@@ -45,11 +52,26 @@ def main():
     # 5) Treina no dataset completo
     pipeline.fit(X, y)
 
-    # 6) Salva pipeline
-    model_dir = os.getenv("PATH_MODEL", "model/pipeline.joblib")
-    os.makedirs(os.path.dirname(model_dir), exist_ok=True)
-    joblib.dump(pipeline, model_dir)
-    print(f"✅ Pipeline salvo em {model_dir}")
+    # 6) Extrai nomes de todas as features após pré‑processamento
+    preproc: ColumnTransformer = pipeline.named_steps["preproc"]
+    # gera array com nomes de todas as colunas transformadas + remainder
+    feat_names = preproc.get_feature_names_out(input_features=X.columns)
+    # garante que não sobrescreva o target por engano
+    feat_list = [f for f in feat_names if f != target_col]
+
+    # 7) Salva features.json
+    features_path = Path(os.getenv("FEATURES_JSON_PATH", "model/features.json"))
+    features_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(features_path, "w", encoding="utf-8") as f:
+        json.dump(feat_list, f, ensure_ascii=False, indent=2)
+    print(f"✅ features.json gerado em {features_path}")
+
+    # 8) Salva pipeline
+    model_path = os.getenv("PATH_MODEL", "model/pipeline.joblib")
+    Path(model_path).parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(pipeline, model_path)
+    print(f"✅ Pipeline salvo em {model_path}")
+
 
 if __name__ == "__main__":
     main()

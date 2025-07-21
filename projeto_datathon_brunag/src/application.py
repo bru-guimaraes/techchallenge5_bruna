@@ -1,96 +1,106 @@
 import os
-import logging
 import joblib
-import json
-import numpy as np
 import pandas as pd
-
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from typing import Literal
-from pythonjsonlogger import jsonlogger
+from pydantic import BaseModel, Field
+from typing import List
 
-# — logger JSON —
-logger = logging.getLogger("recruitment_api")
-handler = logging.StreamHandler()
-handler.setFormatter(jsonlogger.JsonFormatter('%(asctime)s %(name)s %(levelname)s %(message)s'))
-logger.addHandler(handler)
-logger.setLevel(logging.INFO)
+# ---------------------------
+# 1) Definições de Pydantic
+# ---------------------------
 
-app = FastAPI(
-    title="Decision Recruitment API",
-    version="1.0.0",
-    description="Classificação binária de candidatos (match sim/não) com threshold dinâmico"
-)
+class Profile(BaseModel):
+    area_atuacao: str           = Field(..., example="TI - Desenvolvimento")
+    cliente: str                = Field(..., example="Empresa X")
+    conhecimentos_tecnicos: str = Field(..., example="Python, AWS, Docker")
+    eh_sap: bool                = Field(..., example=False)
+    idioma_requerido: str       = Field(..., example="Inglês")
+    nivel_academico: str        = Field(..., example="Superior")
+    nivel_espanhol: str         = Field(..., example="Básico")
+    nivel_ingles: str           = Field(..., example="Avançado")
+    nivel_profissional: str     = Field(..., example="Sênior")
 
-# Modelo de entrada
-class Candidate(BaseModel):
-    cliente: str
-    nivel_profissional: str
-    idioma_requerido: str
-    eh_sap: bool
-    area_atuacao: str
-    nivel_ingles: str
-    nivel_espanhol: str
-    nivel_academico: str
-    conhecimentos_tecnicos: str
+class CandidateJobItem(BaseModel):
+    candidate: Profile = Field(..., description="Dados do candidato")
+    job:       Profile = Field(..., description="Dados da vaga")
 
-# carrega pipeline + lista de features
+class PredictRequest(BaseModel):
+    data: List[CandidateJobItem] = Field(
+        ..., 
+        description="Lista de pares `candidate` + `job`"
+    )
+
+class PredictResponseItem(BaseModel):
+    status:    str   = Field(..., description="‘aprovado’ ou ‘reprovado’")
+    score:     float = Field(..., description="Probabilidade bruta (0–1)")
+    threshold: float = Field(..., description="Valor de corte usado")
+
+class PredictResponse(BaseModel):
+    results: List[PredictResponseItem]
+
+
+# ---------------------------
+# 2) Carrega pipeline
+# ---------------------------
+
 MODEL_PATH = os.getenv("PATH_MODEL", "model/pipeline.joblib")
 try:
     pipeline = joblib.load(MODEL_PATH)
-    logger.info(f"Pipeline carregado de {MODEL_PATH}")
+    expected_cols = list(pipeline.feature_names_in_)
 except Exception as e:
-    logger.error(f"Falha ao carregar pipeline em {MODEL_PATH}: {e}")
-    raise
+    raise RuntimeError(f"Não foi possível carregar o modelo: {e}")
 
-# extrai nomes das features usadas pelo preproc
-try:
-    feature_names = pipeline.named_steps["preproc"].get_feature_names_out().tolist()
-except Exception:
-    feature_names = pipeline.named_steps["preproc"].get_feature_names().tolist()
 
-THRESHOLD = 0.5
+# ---------------------------
+# 3) FastAPI
+# ---------------------------
 
-def get_positive_proba(arr: np.ndarray) -> np.ndarray:
-    if arr.ndim == 2 and arr.shape[1] == 2:
-        return arr[:, 1]
-    if arr.ndim == 2 and arr.shape[1] == 1:
-        return arr[:, 0]
-    if arr.ndim == 1:
-        return arr
-    raise ValueError("Formato de saída de predict_proba inesperado")
-
-@app.post("/predict")
-def predict(candidate: Candidate):
-    data = candidate.dict()
-    df = pd.DataFrame([data])
-
-    # Garante que todas as feature_names existem no DataFrame
-    for col in feature_names:
-        if col not in df.columns:
-            # preenche faltantes com 0 ou False
-            df[col] = 0
-
-    # Reordena as colunas na ordem esperada pelo pipeline
-    X = df[feature_names]
-
-    try:
-        proba = get_positive_proba(pipeline.predict_proba(X))
-    except Exception as e:
-        logger.error(f"Erro ao chamar predict_proba: {e}")
-        raise HTTPException(status_code=500, detail="Erro interno ao calcular previsão")
-
-    match = bool(proba[0] >= THRESHOLD)
-    return {
-        "probability": float(proba[0]),
-        "match": match
-    }
+app = FastAPI(title="API de Previsão de Contratação")
 
 @app.get("/health")
 def health():
     return {"status": "ok"}
 
-@app.get("/features")
-def features():
-    return {"features": feature_names}
+
+@app.post("/predict", response_model=PredictResponse)
+def predict(req: PredictRequest):
+    # 1) Monta DataFrame a partir de cada par (candidate + job)
+    rows = []
+    for item in req.data:
+        c = item.candidate.dict()
+        j = item.job.dict()
+        merged = {**c, **j}
+        rows.append(merged)
+    df = pd.DataFrame(rows)
+
+    # 2) Preencher colunas faltantes com valor neutro
+    for col in expected_cols:
+        if col not in df.columns:
+            # se for booleano, poderia inferir tipo, mas vamos usar 0/False
+            df[col] = 0
+
+    # 3) Cortar colunas extras e reordenar
+    df = df[expected_cols]
+
+    # 4) Chama o pipeline
+    try:
+        probs = pipeline.predict_proba(df)[:, 1]
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"erro ao predizer: {e}")
+
+    # 5) Define threshold
+    threshold = float(os.getenv("PREDICTION_THRESHOLD", 0.5))
+
+    # 6) Monta resposta
+    results = []
+    for p in probs:
+        status = "aprovado" if p >= threshold else "reprovado"
+        results.append(
+            PredictResponseItem(
+                status=status,
+                score=round(float(p), 4),
+                threshold=threshold
+            )
+        )
+
+    return PredictResponse(results=results)
