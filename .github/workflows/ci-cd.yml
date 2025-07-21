@@ -5,11 +5,6 @@ on:
     branches:
       - main
 
-env:
-  # Esses valores também podem venir de Secrets, mas aqui só usamos para imagem
-  ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
-  IMAGE_NAME:   ${{ secrets.ECR_REGISTRY }}:latest
-
 jobs:
   unit-tests:
     name: Testes Unitários
@@ -28,12 +23,8 @@ jobs:
         working-directory: projeto_datathon_brunag
         run: |
           mkdir -p model
-          # cria arquivo vazio para não quebrar import em application.py
           touch model/pipeline.joblib
-          # informa pro app onde está o arquivo
           echo "PATH_MODEL=$(pwd)/model/pipeline.joblib" >> $GITHUB_ENV
-
-          # cria diretórios de parquet vazios pro /match
           mkdir -p data/parquet/{applicants,prospects,vagas}
           echo "PATH_PARQUET_APPLICANTS=$(pwd)/data/parquet/applicants" >> $GITHUB_ENV
           echo "PATH_PARQUET_PROSPECTS=$(pwd)/data/parquet/prospects" >> $GITHUB_ENV
@@ -50,36 +41,9 @@ jobs:
         run: |
           pytest tests/ --maxfail=1 --disable-warnings -q
 
-  build-and-push:
-    name: Build & Push Docker
-    needs: unit-tests
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout do repositório
-        uses: actions/checkout@v3
-
-      - name: Configurar credenciais AWS
-        uses: aws-actions/configure-aws-credentials@v1
-        with:
-          aws-region:          ${{ secrets.AWS_REGION }}           # ex: sa-east-1
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-
-      - name: Login no ECR
-        uses: aws-actions/amazon-ecr-login@v1
-
-      - name: Build e push da imagem Docker
-        uses: docker/build-push-action@v2
-        with:
-          context: projeto_datathon_brunag
-          file:    projeto_datathon_brunag/Dockerfile
-          push:    true
-          tags:    ${{ env.IMAGE_NAME }}
-
   deploy:
     name: Deploy no EC2
-    needs: build-and-push
+    needs: unit-tests
     runs-on: ubuntu-latest
 
     steps:
@@ -91,18 +55,24 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
 
-      - name: Tornar deploy.sh executável
-        run: chmod +x projeto_datathon_brunag/deploy.sh
+      - name: Deploy remoto direto via SSH
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+            set -e
+            cd ~/techchallenge5_bruna/src
 
-      - name: Executar deploy
-        run: projeto_datathon_brunag/deploy.sh
-        env:
-          IMAGE_NAME:     ${{ env.IMAGE_NAME }}
-          REGISTRY_TYPE:  ecr
-          AWS_REGION:     ${{ secrets.AWS_REGION }}
-          EC2_USER:       ${{ secrets.EC2_USER }}
-          EC2_HOST:       ${{ secrets.EC2_HOST }}
-          EC2_KEY_PATH:   ~/.ssh/id_rsa
-          CONTAINER_NAME: datathon-api
-          REMOTE_PORT:    80
-          CONTAINER_PORT: 8000
+            git pull
+
+            docker stop datathon-api || true
+            docker rm datathon-api || true
+
+            docker build --no-cache -t datathon-api:latest .
+
+            docker run -d --name datathon-api \
+              -p 8000:8000 \
+              --log-driver=awslogs \
+              --log-opt awslogs-region=us-east-1 \
+              --log-opt awslogs-group=datathon-logs \
+              --log-opt awslogs-stream=api-stream \
+              datathon-api:latest
+          EOF
