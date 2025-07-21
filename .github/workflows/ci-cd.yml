@@ -6,25 +6,28 @@ on:
     branches:
       - main
 
+# expõe suas credenciais da AWS Lab como env para todo o workflow
 env:
-  ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
-  IMAGE_NAME:   ${{ secrets.ECR_REGISTRY }}:latest
+  AWS_ACCESS_KEY_ID:     ${{ secrets.AWS_LAB_AWS_ACCESS_KEY_ID }}
+  AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_LAB_AWS_SECRET_ACCESS_KEY }}
+  AWS_REGION:           ${{ secrets.AWS_LAB_AWS_REGION }}
+  ECR_REGISTRY:         ${{ secrets.AWS_LAB_ECR_REGISTRY }}
+  IMAGE_NAME:           ${{ env.ECR_REGISTRY }}:latest
 
 jobs:
   unit-tests:
-    name: Run Unit Tests
+    name: Executar Testes Unitários
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Set up Python 3.10
+      - name: Configurar Python 3.10
         uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: Prepare test environment
+      - name: Preparar ambiente de testes
         working-directory: projeto_datathon_brunag/src
         run: |
           mkdir -p model
@@ -35,40 +38,39 @@ jobs:
           echo "PATH_PARQUET_PROSPECTS=$(pwd)/data/parquet/prospects" >> $GITHUB_ENV
           echo "PATH_PARQUET_VAGAS=$(pwd)/data/parquet/vagas" >> $GITHUB_ENV
 
-      - name: Install runtime dependencies
+      - name: Instalar dependências de produção
         working-directory: projeto_datathon_brunag/src
         run: |
           pip install --upgrade pip
-          pip install --no-cache-dir -r requirements.txt
+          pip install --no‑cache‑dir -r requirements.txt
 
-      - name: Install dev dependencies
+      - name: Instalar dependências de desenvolvimento
         working-directory: projeto_datathon_brunag/src
         run: pip install pytest
 
-      - name: Run all tests
+      - name: Executar todos os testes
         working-directory: projeto_datathon_brunag/src
         run: pytest tests/ --maxfail=1 --disable-warnings -q
 
   build-and-push:
-    name: Build & Push Docker Image
+    name: Build e Push da Imagem Docker
     needs: unit-tests
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Configure AWS credentials
+      - name: Configurar credenciais AWS
         uses: aws-actions/configure-aws-credentials@v1
         with:
-          aws-region:            ${{ secrets.AWS_REGION }}
-          aws-access-key-id:     ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-access-key-id:     ${{ env.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ env.AWS_SECRET_ACCESS_KEY }}
+          aws-region:           ${{ env.AWS_REGION }}
 
-      - name: Login to Amazon ECR
+      - name: Login no ECR
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build and push Docker image
+      - name: Build e push da imagem Docker
         uses: docker/build-push-action@v2
         with:
           context: projeto_datathon_brunag
@@ -77,28 +79,27 @@ jobs:
           tags:    ${{ env.IMAGE_NAME }}
 
   deploy:
-    name: Deploy to EC2
+    name: Deploy no EC2
     needs: build-and-push
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      - name: Set up SSH key
+      - name: Configurar chave SSH
         uses: webfactory/ssh-agent@v0.5.4
         with:
-          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+          ssh-private-key: ${{ secrets.EC2_SSH_PRIVATE_KEY }}
 
-      - name: Make deploy.sh executable
+      - name: Tornar deploy.sh executável
         run: chmod +x projeto_datathon_brunag/deploy.sh
 
-      - name: Deploy to EC2
+      - name: Executar deploy no EC2
         run: projeto_datathon_brunag/deploy.sh
         env:
           IMAGE_NAME:     ${{ env.IMAGE_NAME }}
           REGISTRY_TYPE:  ecr
-          AWS_REGION:     ${{ secrets.AWS_REGION }}
+          AWS_REGION:     ${{ env.AWS_REGION }}
           EC2_USER:       ${{ secrets.EC2_USER }}
           EC2_HOST:       ${{ secrets.EC2_HOST }}
           EC2_KEY_PATH:   ~/.ssh/id_rsa
