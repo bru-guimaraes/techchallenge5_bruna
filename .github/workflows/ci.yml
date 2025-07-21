@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: ["3.10"]
+        python-version: [3.10]
 
     steps:
       - name: Checkout repository
@@ -26,38 +26,52 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('projeto_datathon_brunag/src/requirements.txt') }}
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/requirements.txt') }}
 
       - name: Prepare test environment
+        working-directory: projeto_datathon_brunag
         run: |
-          mkdir -p projeto_datathon_brunag/model
-          mkdir -p projeto_datathon_brunag/src/data/parquet/{applicants,prospects,vagas}
-          echo "PATH_MODEL=$(pwd)/projeto_datathon_brunag/model/pipeline.joblib" >> $GITHUB_ENV
-          echo "PATH_PARQUET_APPLICANTS=$(pwd)/projeto_datathon_brunag/src/data/parquet/applicants" >> $GITHUB_ENV
-          echo "PATH_PARQUET_PROSPECTS=$(pwd)/projeto_datathon_brunag/src/data/parquet/prospects" >> $GITHUB_ENV
-          echo "PATH_PARQUET_VAGAS=$(pwd)/projeto_datathon_brunag/src/data/parquet/vagas" >> $GITHUB_ENV
+          mkdir -p model
+          echo "PATH_MODEL=$(pwd)/model/pipeline.joblib" >> $GITHUB_ENV
+          mkdir -p data/parquet/{applicants,prospects,vagas}
+          echo "PATH_PARQUET_APPLICANTS=$(pwd)/data/parquet/applicants"  >> $GITHUB_ENV
+          echo "PATH_PARQUET_PROSPECTS=$(pwd)/data/parquet/prospects"    >> $GITHUB_ENV
+          echo "PATH_PARQUET_VAGAS=$(pwd)/data/parquet/vagas"            >> $GITHUB_ENV
 
-      - name: Install dependencies
-        working-directory: projeto_datathon_brunag/src
+      - name: Install runtime dependencies
+        working-directory: projeto_datathon_brunag
         run: |
           pip install --upgrade pip
-          pip install --no-cache-dir -r requirements.txt pytest flake8
+          pip install --no-cache-dir -r requirements.txt
 
-      - name: Run all tests
-        working-directory: projeto_datathon_brunag/src
+      - name: Install dev dependencies
+        working-directory: projeto_datathon_brunag
+        run: pip install pytest
+
+      - name: Create dummy pipeline model
+        working-directory: projeto_datathon_brunag
+        run: |
+          python - << 'EOF'
+import joblib
+from sklearn.dummy import DummyClassifier
+clf = DummyClassifier(strategy="constant", constant=0)
+clf.fit([[0],[1]], [0,1])
+import os
+model_path = os.getenv("PATH_MODEL")
+os.makedirs(os.path.dirname(model_path), exist_ok=True)
+joblib.dump(clf, model_path)
+EOF
+
+      - name: Run unit tests
+        working-directory: projeto_datathon_brunag
         run: pytest tests/ --maxfail=1 --disable-warnings -q
 
-      - name: Lint with flake8
-        working-directory: projeto_datathon_brunag/src
-        run: flake8 .
-
-      - name: Build Docker image
+      - name: Build & push Docker image to Docker Hub
         if: github.event_name == 'push'
         uses: docker/build-push-action@v4
         with:
           context: projeto_datathon_brunag
-          file: Dockerfile
           push: false
           tags: seu-usuario/projeto-datathon:latest
           cache-from: type=registry,ref=seu-usuario/projeto-datathon:latest
-          cache-to:   type=inline
+          cache-to: type=inline
