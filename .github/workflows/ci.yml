@@ -32,33 +32,37 @@ jobs:
         working-directory: projeto_datathon_brunag
         run: |
           mkdir -p model
-          echo "PATH_MODEL=$(pwd)/model/modelo_classificador.pkl" >> $GITHUB_ENV
+          # Ajuste para o nome correto do seu modelo:
+          echo "PATH_MODEL=$(pwd)/model/pipeline.joblib" >> $GITHUB_ENV
           mkdir -p data/parquet/{applicants,prospects,vagas}
           echo "PATH_PARQUET_APPLICANTS=$(pwd)/data/parquet/applicants"  >> $GITHUB_ENV
           echo "PATH_PARQUET_PROSPECTS=$(pwd)/data/parquet/prospects"    >> $GITHUB_ENV
           echo "PATH_PARQUET_VAGAS=$(pwd)/data/parquet/vagas"            >> $GITHUB_ENV
 
-      - name: Install runtime dependencies
+      - name: Install dependencies
         working-directory: projeto_datathon_brunag
         run: |
           pip install --upgrade pip
-          pip install --no-cache-dir -r requirements.txt
+          pip install --no-cache-dir -r requirements.txt pytest
 
-      - name: Install dev dependencies
+      - name: Run all tests
         working-directory: projeto_datathon_brunag
-        run: pip install pytest
+        run: pytest tests/ --maxfail=1 --disable-warnings -q
 
-      - name: Run endpoint tests
+      # Opcional: Lint
+      - name: Lint with flake8
         working-directory: projeto_datathon_brunag
-        run: pytest tests/test_api_endpoints.py --maxfail=1 --disable-warnings -q
+        run: |
+          pip install flake8
+          flake8 .
 
-      - name: Build & push Docker image to Docker Hub
+      - name: Build Docker image
         if: github.event_name == 'push'
+        working-directory: projeto_datathon_brunag
         uses: docker/build-push-action@v4
         with:
-          context: projeto_datathon_brunag
-          push: false               # muda para `true` se quiser publicar
-          tags: |
-            seu-usuario/projeto-datathon:latest
+          context: .
+          push: false
+          tags: seu-usuario/projeto-datathon:latest
           cache-from: type=registry,ref=seu-usuario/projeto-datathon:latest
           cache-to: type=inline

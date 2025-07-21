@@ -5,9 +5,8 @@ on:
     branches: [ main ]
 
 env:
-  # Usamos diretamente o secret aqui, não podemos referenciar env dentro de env
   ECR_REGISTRY: ${{ secrets.ECR_REGISTRY }}
-  IMAGE_NAME:    ${{ secrets.ECR_REGISTRY }}:latest
+  IMAGE_NAME:   ${{ secrets.ECR_REGISTRY }}:latest
 
 jobs:
   unit-tests:
@@ -27,12 +26,8 @@ jobs:
         working-directory: projeto_datathon_brunag
         run: |
           mkdir -p model
-          # exporta variáveis de ambiente pro restante do job
-          echo "PATH_MODEL=$(pwd)/model/modelo_classificador.pkl" >> $GITHUB_ENV
+          echo "PATH_MODEL=$(pwd)/model/pipeline.joblib" >> $GITHUB_ENV
           mkdir -p data/parquet/applicants data/parquet/prospects data/parquet/vagas
-          echo "PATH_PARQUET_APPLICANTS=$(pwd)/data/parquet/applicants" >> $GITHUB_ENV
-          echo "PATH_PARQUET_PROSPECTS=$(pwd)/data/parquet/prospects" >> $GITHUB_ENV
-          echo "PATH_PARQUET_VAGAS=$(pwd)/data/parquet/vagas" >> $GITHUB_ENV
 
       - name: Install dependencies
         working-directory: projeto_datathon_brunag
@@ -40,10 +35,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install --no-cache-dir -r requirements.txt pytest
 
-      - name: Run endpoint tests
+      - name: Run all tests
         working-directory: projeto_datathon_brunag
         run: |
-          pytest tests/test_api_endpoints.py --maxfail=1 --disable-warnings -q
+          pytest tests/ --maxfail=1 --disable-warnings -q
 
   build-and-push:
     name: Build & Push Docker Image
