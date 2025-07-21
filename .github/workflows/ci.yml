@@ -26,38 +26,37 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('**/src/requirements.txt') }}
+          key: ${{ runner.os }}-pip-${{ matrix.python-version }}-${{ hashFiles('projeto_datathon_brunag/src/requirements.txt') }}
 
       - name: Prepare test environment
         run: |
-          # Cria pasta de modelo e de dados fake
-          mkdir -p src/model
-          mkdir -p src/data/parquet/{applicants,prospects,vagas}
-          # Exporta variáveis de ambiente
-          echo "PATH_MODEL=$(pwd)/src/model/pipeline.joblib" >> $GITHUB_ENV
-          echo "PATH_PARQUET_APPLICANTS=$(pwd)/src/data/parquet/applicants" >> $GITHUB_ENV
-          echo "PATH_PARQUET_PROSPECTS=$(pwd)/src/data/parquet/prospects" >> $GITHUB_ENV
-          echo "PATH_PARQUET_VAGAS=$(pwd)/src/data/parquet/vagas" >> $GITHUB_ENV
+          mkdir -p projeto_datathon_brunag/model
+          mkdir -p projeto_datathon_brunag/src/data/parquet/{applicants,prospects,vagas}
+          echo "PATH_MODEL=$(pwd)/projeto_datathon_brunag/model/pipeline.joblib" >> $GITHUB_ENV
+          echo "PATH_PARQUET_APPLICANTS=$(pwd)/projeto_datathon_brunag/src/data/parquet/applicants" >> $GITHUB_ENV
+          echo "PATH_PARQUET_PROSPECTS=$(pwd)/projeto_datathon_brunag/src/data/parquet/prospects" >> $GITHUB_ENV
+          echo "PATH_PARQUET_VAGAS=$(pwd)/projeto_datathon_brunag/src/data/parquet/vagas" >> $GITHUB_ENV
 
       - name: Install dependencies
+        working-directory: projeto_datathon_brunag/src
         run: |
           pip install --upgrade pip
-          pip install --no-cache-dir -r src/requirements.txt pytest
+          pip install --no-cache-dir -r requirements.txt pytest flake8
 
       - name: Run all tests
-        run: pytest src/tests/ --maxfail=1 --disable-warnings -q
+        working-directory: projeto_datathon_brunag/src
+        run: pytest tests/ --maxfail=1 --disable-warnings -q
 
       - name: Lint with flake8
-        run: |
-          pip install flake8
-          flake8 src/
+        working-directory: projeto_datathon_brunag/src
+        run: flake8 .
 
       - name: Build Docker image
         if: github.event_name == 'push'
         uses: docker/build-push-action@v4
         with:
-          context: .
-          file: src/Dockerfile
+          context: projeto_datathon_brunag
+          file: Dockerfile
           push: false
           tags: seu-usuario/projeto-datathon:latest
           cache-from: type=registry,ref=seu-usuario/projeto-datathon:latest
