@@ -1,4 +1,3 @@
-# .github/workflows/ci.yml
 name: CI
 
 on:
@@ -12,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.10]
+        python-version: ["3.10"]  # agora é string, não float
 
     steps:
       - name: Checkout repository
@@ -59,7 +58,6 @@ jobs:
         if: github.event_name == 'push'
         uses: docker/build-push-action@v4
         with:
-          # aponta para a pasta raiz da sua app
           context: projeto_datathon_brunag
           file:    projeto_datathon_brunag/Dockerfile
           push:    false
