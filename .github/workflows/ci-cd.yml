@@ -59,7 +59,7 @@ jobs:
 
       - name: Deploy remoto via SSH (pasta dinâmica)
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
+          ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << "EOF"
             set -e
 
             # Remove qualquer repo antigo e clona o novo
@@ -67,7 +67,7 @@ jobs:
             git clone https://github.com/bru-guimaraes/techchallenge5_bruna.git $HOME/techchallenge5_bruna
 
             # Entra automaticamente na pasta do Dockerfile
-            cd \$(find $HOME/techchallenge5_bruna -type f -name Dockerfile -exec dirname {} \; | head -n 1)
+            cd $(find $HOME/techchallenge5_bruna -type f -name Dockerfile -exec dirname {} \; | head -n 1)
 
             git pull
 
