@@ -60,10 +60,9 @@ jobs:
       - name: Deploy remoto via SSH
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.EC2_USER }}@${{ secrets.EC2_HOST }} << 'EOF'
-            set -e
-
-            # Clona só se não existir o diretório
+            set +e
             [ -d "$HOME/techchallenge5_bruna/src" ] || git clone https://github.com/bru-guimaraes/techchallenge5_bruna.git $HOME/techchallenge5_bruna
+            set -e
 
             cd $HOME/techchallenge5_bruna/src
 
